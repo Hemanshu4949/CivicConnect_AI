@@ -67,9 +67,15 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.androidx.material.icons.extended.v177)
-    implementation("com.google.maps.android:maps-compose:4.3.3")
+    implementation("com.google.maps.android:maps-compose:7.0.0")
     implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation(libs.play.services.location)
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // 1. For the System Splash Screen (XML part)
+    implementation("androidx.core:core-splashscreen:1.2.0")
+
+    // 2. For playing the Video (Compose part)
+    implementation("androidx.media3:media3-exoplayer:1.2.0")
+    implementation("androidx.media3:media3-ui:1.2.0")
 
 }

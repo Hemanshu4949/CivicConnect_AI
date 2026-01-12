@@ -6,7 +6,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -482,89 +481,6 @@ fun SignUpScreen(
             }
         }
     }
-        // 3. INSERT THE PHONE INPUT UI HERE (The overlay)
-        // This sits "on top" of the box stack
-        if (showPhoneInput) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background) // Solid background covers the form
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "One Last Step!",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Please enter your contact number to complete your profile.")
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-
-                //--- check for the contact number valid format ---
-                CheckContact(contactNumber , onResult = { error -> contactError = error })
-
-                SignUpTextField(
-                    value = contactNumber,
-                    onValueChange = { if (it.length <= 10 && it.all { c -> c.isDigit() }) contactNumber = it },
-                    placeholder = "Contact Number",
-                    icon = Icons.Default.Phone,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Phone,
-                        imeAction = ImeAction.Default// Show "Next" arrow instead of "Enter"
-                    )
-                )
-                if (contactError != null) {
-                    Text(
-                        text = contactError!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = {
-                        // 2. Get the Current User ID safely
-                        val currentUser = auth.currentUser
-                        if (currentUser != null) {
-                            val userId = currentUser.uid
-
-                            // 3. Update ONLY the 'contactNumber' field for this user
-                            // Path: users -> {userId} -> contactNumber
-                            database.getReference("users").child(userId).child("contactNumber")
-                                .setValue(contactNumber)
-                                .addOnSuccessListener {
-                                    // 4. Success! Now go to Home
-                                    isLoading = false
-                                    onRegisterClick("SignInWithGoogle")
-                                }
-                                .addOnFailureListener { e ->
-                                    isLoading = false
-                                    Toast.makeText(
-                                        context,
-                                        "Failed to save number: ${e.message}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                        }
-                        else {
-                            isLoading = false
-                            Toast.makeText(context, "User not found. Try signing in again.", Toast.LENGTH_SHORT).show()
-                        }
-
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Complete Profile"  , color = Color.Black)
-                }
-            }
-        }
         if (isLoading) {
             Box(Modifier.fillMaxSize(), Alignment.Center)
             {
@@ -575,11 +491,94 @@ fun SignUpScreen(
             }
         }
     }
+    // 3. INSERT THE PHONE INPUT UI HERE (The overlay)
+    // This sits "on top" of the box stack
+    if (showPhoneInput) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background) // Solid background covers the form
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "One Last Step!",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Please enter your contact number to complete your profile.")
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+
+            //--- check for the contact number valid format ---
+            CheckContact(contactNumber , onResult = { error -> contactError = error })
+
+            SignUpTextField(
+                value = contactNumber,
+                onValueChange = { if (it.length <= 10 && it.all { c -> c.isDigit() }) contactNumber = it },
+                placeholder = "Contact Number",
+                icon = Icons.Default.Phone,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Default// Show "Next" arrow instead of "Enter"
+                )
+            )
+            if (contactError != null) {
+                Text(
+                    text = contactError!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    // 2. Get the Current User ID safely
+                    val currentUser = auth.currentUser
+                    if (currentUser != null) {
+                        val userId = currentUser.uid
+
+                        // 3. Update ONLY the 'contactNumber' field for this user
+                        // Path: users -> {userId} -> contactNumber
+                        database.getReference("users").child(userId).child("contactNumber")
+                            .setValue(contactNumber)
+                            .addOnSuccessListener {
+                                // 4. Success! Now go to Home
+                                isLoading = false
+                                onRegisterClick("SignInWithGoogle")
+                            }
+                            .addOnFailureListener { e ->
+                                isLoading = false
+                                Toast.makeText(
+                                    context,
+                                    "Failed to save number: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                    }
+                    else {
+                        isLoading = false
+                        Toast.makeText(context, "User not found. Try signing in again.", Toast.LENGTH_SHORT).show()
+                    }
+
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Complete Profile"  , color = Color.Black)
+            }
+        }
+    }
 }
 
 
 @Composable
-private fun CheckContact(
+public fun CheckContact(
     contactNumber: String,
     onResult: (String?) -> Unit // Pass a function to update the error
 ) {
@@ -609,7 +608,7 @@ private fun CheckContact(
 
 // --- Helper Component to style the text fields exactly like the design ---
 @Composable
-private fun SignUpTextField(
+public fun SignUpTextField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,

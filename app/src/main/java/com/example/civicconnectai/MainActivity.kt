@@ -1,7 +1,10 @@
 package com.example.civicconnectai
 
+import android.animation.ObjectAnimator
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.view.animation.AnticipateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -12,7 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.fragment.app.FragmentManager
+import androidx.core.animation.doOnEnd
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -23,93 +27,193 @@ import com.example.civicconnectai.authentication.SignUpScreen
 import com.example.civicconnectai.bottomNavScreens.IssueDetailScreen
 import com.example.civicconnectai.bottomNavScreens.MapScreen
 import com.example.civicconnectai.bottomNavScreens.ReportIssueScreen
+import com.example.civicconnectai.splashScreen.VideoSplashScreen
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+
+//        val splashScreen = installSplashScreen()
+
+//  HANDLE SYSTEM SPLASH (The "Handshake")
+        val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
+
+// transition function
+        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
+
+            // Create a fade-out effect on the entire splash view
+            val fadeOut = ObjectAnimator.ofFloat(
+                splashScreenViewProvider.view,
+                View.ALPHA,
+                1f,
+                0f
+            )
+
+            fadeOut.duration = 900L // Duration in milliseconds (1.5 seconds)
+            fadeOut.interpolator = AnticipateInterpolator() // Smooth acceleration
+
+            // CRITICAL: You must remove the splash view when the animation is done!
+            fadeOut.doOnEnd {
+                splashScreenViewProvider.remove()
+            }
+
+            // Start the animation
+            fadeOut.start()
+        }
+
+
+//        var isSplashVisible = true
+//
+//        // 2. Tell the Splash Screen to stay ON while the flag is true
+//        splashScreen.setKeepOnScreenCondition {
+//            isSplashVisible
+//        }
+//
+//        // 3. Start a timer to turn off the flag after X milliseconds
+//        // (This runs on a background thread so it doesn't freeze the app)
+//        lifecycleScope.launch {
+//            delay(5000) // Wait for 3 seconds (3000 ms)
+//            isSplashVisible = false
+//        }
         setContent {
             CivicConnectTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    //  Get the current user status
+                    val auth = FirebaseAuth.getInstance()
+
+                    // get the required page as per the logged in status
+//                    var startRoute by remember { mutableStateOf("loading") }
+//
+//                    LaunchedEffect(Unit) {
+//                        val user = auth.currentUser
+//                        if (user != null) {
+                            // User is logged in, but do they have a phone number?
+//                            FirebaseDatabase.getInstance().getReference("users")
+//                                .child(user.uid).child("contactNumber").get()
+//                                .addOnSuccessListener { snapshot ->
+//                                    startRoute = if (snapshot.exists() && snapshot.value != "") {
+//                                        "home" // All good
+//                                    } else {
+//                                        // Logged in but no phone? Send them to finish signup
+//                                        "signup/SignInWithGoogle"
+//                                    }
+//                                }
+//                                .addOnFailureListener {
+//                                    startRoute = "login" // Error? Safe fallback
+//                                }
+//                        } else {
+//                            startRoute = "login"
+//                        }
+//                    }
+
                     // 1. Create the "Stage Manager" (Controller)
                     val navController = rememberNavController()
 
                     // 2. Define the "Stage" (NavHost)
                     // startDestination tells it which screen to show first
-                    NavHost(
-                        navController = navController, startDestination = "login",
+//                    if (startRoute == "loading") {
+//                        // Show a simple logo or spinner while checking DB
+//                        Box(modifier = Modifier.fillMaxSize()) {
+//                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+//                        }
+//                    } else {
+                        NavHost(
+                            navController = navController, startDestination = "splash",
 
-                        enterTransition = {
-                            slideIntoContainer(
-                                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(400)
-                            )
-                        },
-                        // Global Exit Transition (Slide out to Left)
-                        exitTransition = {
-                            slideOutOfContainer(
-                                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(400)
-                            )
-                        },
-                        // Global Back Enter (Slide in from Left)
-                        popEnterTransition = {
-                            slideIntoContainer(
-                                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(400)
-                            )
-                        },
-                        // Global Back Exit (Slide out to Right)
-                        popExitTransition = {
-                            slideOutOfContainer(
-                                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(400)
-                            )
-                        }
-                    )
-                    {
-
-                        // SCREEN 1: Login
-                        composable("login") {
-                            LoginScreen(
-                                onLoginClick = {
-                                    // Navigate to Home (we will build Home later)
-                                    navController.navigate("home")
-                                    {
-                                        popUpTo(navController.graph.startDestinationId)
-                                        {
-                                            inclusive = true
-                                        }
-                                    }
-                                },
-                                onSignUpClick = {
-                                    // Navigate to Sign Up Screen
-                                    navController.navigate("signup")
-                                    {
-                                        popUpTo(navController.graph.startDestinationId)
-                                        {
-                                            inclusive = true
-                                        }
-                                    }
-                                },
-                                onGoogleSignInClick = { /* Handle Google Auth */ },
-                                onForgotPasswordClick = { /* Handle Forgot Password */ }
-                            )
-                        }
-
-                        // SCREEN 2: Sign Up
-                        composable(route = "signup")
+                            enterTransition = {
+                                slideIntoContainer(
+                                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                                    animationSpec = tween(400)
+                                )
+                            },
+                            // Global Exit Transition (Slide out to Left)
+                            exitTransition = {
+                                slideOutOfContainer(
+                                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                                    animationSpec = tween(400)
+                                )
+                            },
+                            // Global Back Enter (Slide in from Left)
+                            popEnterTransition = {
+                                slideIntoContainer(
+                                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                                    animationSpec = tween(400)
+                                )
+                            },
+                            // Global Back Exit (Slide out to Right)
+                            popExitTransition = {
+                                slideOutOfContainer(
+                                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                                    animationSpec = tween(400)
+                                )
+                            }
+                        )
                         {
 
+                           //  Your Video & Logic
+                            composable("splash" ,
+                                // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
+                                popExitTransition = {
+                                    slideOutVertically(
+                                        targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
+                                        animationSpec = tween(500)
+                                    )
+                                }) {
+                                VideoSplashScreen(navController, auth, FirebaseDatabase.getInstance())
+                            }
+
+                            // SCREEN 1: Login
+                            composable("login") {
+                                LoginScreen(
+                                    onLoginClick = {
+                                        // Navigate to Home (we will build Home later)
+                                        navController.navigate("home")
+                                        {
+                                            popUpTo(navController.graph.startDestinationId)
+                                            {
+                                                inclusive = true
+                                            }
+                                        }
+                                    },
+                                    onSignUpClick = {
+                                        // Navigate to Sign Up Screen
+                                        navController.navigate("signup")
+                                        {
+                                            popUpTo(navController.graph.startDestinationId)
+                                            {
+                                                inclusive = true
+                                            }
+                                        }
+                                    },
+                                    onGoogleSignInClick = {
+                                        navController.navigate("home")
+                                        {
+                                            popUpTo(navController.graph.startDestinationId)
+                                            {
+                                                inclusive = true
+                                            }
+                                        }
+                                    },
+                                    onForgotPasswordClick = { /* Handle Forgot Password */ },
+                                )
+                            }
+
+                            // SCREEN 2: Sign Up
+                            composable(route = "signup")
+                            {
 
 
-                            SignUpScreen(
-                                onRegisterClick = { option ->
+                                SignUpScreen(
+                                    onRegisterClick = { option ->
 
-                                        Log.e("Routes" , option.toString())
+                                        Log.e("Routes", option.toString())
                                         when (option) {
                                             "SignInWithGoogle" -> {
                                                 navController.navigate("home")
@@ -134,60 +238,61 @@ class MainActivity : ComponentActivity() {
                                                 navController.popBackStack()
                                             }
                                         }
-                                                  },
+                                    },
 
-                                onLoginClick = {
-                                    // Go back to Login
-                                    navController.popBackStack()
-                                }
+                                    onLoginClick = {
+                                        // Go back to Login
+                                        navController.popBackStack()
+                                    }
 
-                            )
-                        }
-
-                        // 3. Home Screen
-                        composable("home",
-
-                            enterTransition = {
-                                slideInVertically(
-                                    initialOffsetY = { fullHeight -> fullHeight }, // Starts below the screen
-                                    animationSpec = tween(500)
-                                )
-                            },
-
-                            // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
-                            popExitTransition = {
-                                slideOutVertically(
-                                    targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
-                                    animationSpec = tween(500)
                                 )
                             }
 
-                        ) {
-                            MainScreen(
-                                // --- THIS MAKES THE FAB WORK ---
-                                reportIssueScreen = {
-                                    // Navigate to Report Issue
-                                    navController.navigate("report_issue")
+                            // 3. Home Screen
+                            composable(
+                                "home",
+
+                                enterTransition = {
+                                    slideInVertically(
+                                        initialOffsetY = { fullHeight -> fullHeight }, // Starts below the screen
+                                        animationSpec = tween(500)
+                                    )
                                 },
-                                // --- THIS MAKES THE LIST ITEMS WORK ---
-                                onIssueClick = { issueId ->
-                                    // Navigate to Report Issue (Editable = False)
-                                    // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
-                                    navController.navigate("issue_detail/$issueId")
-                                }
-                            )
-                        }
-                        composable ("map"){
 
-                            MapScreen(
-                                reportIssueScreen = {
-                                    navController.navigate("report_issue")
+                                // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
+                                popExitTransition = {
+                                    slideOutVertically(
+                                        targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
+                                        animationSpec = tween(500)
+                                    )
                                 }
-                            )
-                        }
 
-                        // 4. Report Issue Screen (Handles both New & View modes)
-                        // We define a route that accepts a parameter: "report_issue/{isEditable}"
+                            ) {
+                                MainScreen(
+                                    // --- THIS MAKES THE FAB WORK ---
+                                    reportIssueScreen = {
+                                        // Navigate to Report Issue
+                                        navController.navigate("report_issue")
+                                    },
+                                    // --- THIS MAKES THE LIST ITEMS WORK ---
+                                    onIssueClick = { issueId ->
+                                        // Navigate to Report Issue (Editable = False)
+                                        // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
+                                        navController.navigate("issue_detail/$issueId")
+                                    }
+                                )
+                            }
+                            composable("map") {
+
+                                MapScreen(
+                                    reportIssueScreen = {
+                                        navController.navigate("report_issue")
+                                    }
+                                )
+                            }
+
+                            // 4. Report Issue Screen (Handles both New & View modes)
+                            // We define a route that accepts a parameter: "report_issue/{isEditable}"
 //                        composable("report_issue/{isEditable}") { backStackEntry ->
 //
 //                            // Get the "true" or "false" string passed from Home
@@ -208,28 +313,30 @@ class MainActivity : ComponentActivity() {
 //                                }
 //                            )
 //                        }
-                        // 4. Report Issue Screen (CREATE ONLY)
-                        composable("report_issue") {
-                            ReportIssueScreen(
-                                onBackClick = { navController.popBackStack() },
-                                onSubmitClick = { navController.popBackStack() }
-                            )
-                        }
+                            // 4. Report Issue Screen (CREATE ONLY)
+                            composable("report_issue") {
+                                ReportIssueScreen(
+                                    onBackClick = { navController.popBackStack() },
+                                    onSubmitClick = { navController.popBackStack() }
+                                )
+                            }
 
-                        // 5. Issue Detail Screen (VIEW ONLY)
-                        composable(
-                            route = "issue_detail/{issueId}",
-                            arguments = listOf(navArgument("issueId") { type = NavType.StringType })
-                        ) { backStackEntry ->
-                            // You can retrieve the ID if needed:
-                             val issueId = backStackEntry.arguments?.getString("issueId")
+                            // 5. Issue Detail Screen (VIEW ONLY)
+                            composable(
+                                route = "issue_detail/{issueId}",
+                                arguments = listOf(navArgument("issueId") {
+                                    type = NavType.StringType
+                                })
+                            ) { backStackEntry ->
+                                // You can retrieve the ID if needed:
+                                val issueId = backStackEntry.arguments?.getString("issueId")
 
-                            IssueDetailScreen(
-                                issueId = issueId,
-                                onBackClick = { navController.popBackStack() }
-                            )
+                                IssueDetailScreen(
+                                    issueId = issueId,
+                                    onBackClick = { navController.popBackStack() }
+                                )
+                            }
                         }
-                    }
                 }
             }
         }
