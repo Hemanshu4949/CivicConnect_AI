@@ -1,6 +1,11 @@
 package com.example.civicconnectai.bottomNavScreens
 
-import androidx.compose.foundation.Image
+import CivicIssue
+import android.util.Log
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
@@ -16,31 +21,117 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.civicconnectai.IssueDataSource
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.civicconnectai.addissue.MapLocationPickerDialog
+import com.example.civicconnectai.addissue.fetchCurrentLocation
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IssueDetailScreen(
-    issueId: String?,
-    onBackClick: () -> Unit
-) {
-    val issue = IssueDataSource.getIssueById(issueId)
+    issue: CivicIssue?,
+    onBackClick: () -> Unit ,
 
+) {
     val backgroundColor = Color(0xFFF8F9FA)
     val infrastructureColor = Color(0xFFE3F2FD)
     val infrastructureTextColor = Color(0xFF1976D2)
     val highPriorityColor = Color(0xFFFFEBEE)
     val highPriorityTextColor = Color(0xFFD32F2F)
+
+    //map variables
+    var showMapDialog by remember { mutableStateOf(false) }
+
+    // voting system variables
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+    var myCurrentVote by remember { mutableStateOf<String?>(null) }
+    var validCount by remember { mutableIntStateOf(0) }
+    var invalidCount by remember { mutableIntStateOf(0) }
+
+//    val coroutineScope = rememberCoroutineScope()
+//
+//    LaunchedEffect(issue?.issueId) {
+//        if (currentUserId != null) {
+//            val voteRef = FirebaseDatabase.getInstance().getReference("issue_votes")
+//                .child(issue?.issueId ?: "none").child(currentUserId)
+//
+//            // Listen in real-time so the button highlights instantly
+//            voteRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+//                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+//                    myCurrentVote = snapshot.getValue(String::class.java)
+//                }
+//                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+//            })
+//        }
+//    }
+
+    DisposableEffect(issue?.issueId) {
+        if (issue?.issueId == null) return@DisposableEffect onDispose {}
+
+        val voteRef = FirebaseDatabase.getInstance().getReference("issue_votes").child(issue.issueId)
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                var vCount = 0
+                var iCount = 0
+                var myVote: String? = null
+
+                // Loop through every user who voted on this issue
+                for (child in snapshot.children) {
+                    val voteType = child.getValue(String::class.java)
+
+                    if (voteType == "valid") vCount++
+                    if (voteType == "invalid") iCount++
+
+                    // Check if this specific vote belongs to the current logged-in user
+                    if (child.key == currentUserId) {
+                        myVote = voteType
+                    }
+                }
+
+                // Update the UI instantly
+                validCount = vCount
+                invalidCount = iCount
+                myCurrentVote = myVote
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+
+        voteRef.addValueEventListener(listener)
+
+        // Automatically remove the listener when the user presses the Back button
+        onDispose {
+            voteRef.removeEventListener(listener)
+        }
+    }
+
+
 
     Scaffold(
         topBar = {
@@ -88,19 +179,43 @@ fun IssueDetailScreen(
                 // Placeholder for the image
             ) {
 
-                 Image(
-                     painter = painterResource(id = issue?.imageUrl ?: 0),
-                     contentDescription = "Issue Image",
-                     contentScale = ContentScale.FillBounds,
-                     modifier = Modifier.fillMaxSize()
-                 )
-                if(issue?.imageUrl == null) {
-                    Text(
-                        "Image of Pothole",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White
+                if ((issue?.imageUrl?.isNotEmpty() ?: "null") == true) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(issue?.imageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Issue Image",
+                        contentScale = ContentScale.FillBounds, // Crops it perfectly to fit the box
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.LightGray)
                     )
+                } else {
+                    // Placeholder if no image was uploaded
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.LightGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No Image Available", color = Color.DarkGray)
+                    }
                 }
+//                 Image(
+//                     painter = painterResource(id = issue.imageUrl ?: 0),
+//                     contentDescription = "Issue Image",
+//                     contentScale = ContentScale.FillBounds,
+//                     modifier = Modifier.fillMaxSize()
+//                 )
+//                if(issue?.imageUrl == null) {
+//                    Text(
+//                        "Image of Pothole",
+//                        modifier = Modifier.align(Alignment.Center),
+//                        color = Color.White
+//                    )
+//                }
             }
 
             // Space between image and the first card
@@ -118,7 +233,7 @@ fun IssueDetailScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Chips
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TagChip("INFRASTRUCTURE", infrastructureColor, infrastructureTextColor)
+                        TagChip(issue?.category ?: "none", infrastructureColor, infrastructureTextColor)
                         TagChip(issue?.status ?: "none", highPriorityColor, highPriorityTextColor)
                     }
 
@@ -144,7 +259,7 @@ fun IssueDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = issue?.timeAgo ?: "none",
+                            text = getTimeAgo(issue?.timestamp ?: 0),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
@@ -166,7 +281,7 @@ fun IssueDetailScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = issue?.location ?: "none",
+                                text = issue?.address ?: "none",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
@@ -178,25 +293,109 @@ fun IssueDetailScreen(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+                    // ... inside your IssueDetailScreen Column ...
 
-                    // Map Placeholder
-                    Box(
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Location",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+// 1. Construct the Google Maps Static URL
+// Replace "YOUR_GOOGLE_MAPS_API_KEY" with your actual key!
+                    val apiKey = "AIzaSyCZeSw8_NRrgUu1Iiz4f4bVIXd5pZSD5uQ"
+                    val lat = issue?.latitude // Assuming you saved these in Firebase!
+                    val lng = issue?.longitude
+                    val mapUrl = "https://maps.googleapis.com/maps/api/staticmap?" +
+                            "center=$lat,$lng" +
+                            "&zoom=15" +
+                            "&size=600x300" +
+                            "&maptype=roadmap" +
+                            "&markers=color:red%7C$lat,$lng" + // %7C is the URL-encoded '|' character
+                            "&key=$apiKey"
+
+                    Log.e("MapDebug", "Map URL: $mapUrl");
+
+// 2. The Interactive Map Card
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(120.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFE0E0E0)) // Gray map placeholder
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        onClick = {
+                            showMapDialog = true
+                        }
                     ) {
-                        Text(
-                            "Map View Placeholder",
-                            modifier = Modifier.align(Alignment.Center),
-                            color = Color.Gray
-                        )
+                        Box(modifier = Modifier.fillMaxSize()) {
+
+                            // 3. The Map Image (Loads instantly!)
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(mapUrl)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Map showing issue location",
+                                contentScale = ContentScale.Crop, // Stretches the map perfectly to fit the box
+                                modifier = Modifier.fillMaxSize() ,
+                                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                                error = painterResource(android.R.drawable.ic_dialog_alert)
+                            )
+
+                            // 4. A dark gradient overlay so the white button pops
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.2f))
+                            )
+
+                            // 5. The floating "Tap to view" button in the center
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color.White.copy(alpha = 0.9f),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier.align(Alignment.Center)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = Color(0xFF5B75E6),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Tap for interactive map",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
         }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Calculate the math
+            val totalVotes = validCount + invalidCount
+
+            // Prevent dividing by zero if nobody has voted yet!
+            val accuracyRatio = if (totalVotes > 0) {
+                validCount.toFloat() / totalVotes.toFloat()
+            } else {
+                0.0f // Default to 50% if no votes exist
+            }
+            // Convert the decimal (e.g., 0.75) into a nice whole number (75)
+            val accuracyPercentage = (accuracyRatio * 100).toInt()
 
             // --- 3. Validate Issue Card ---
             Card(
@@ -224,7 +423,7 @@ fun IssueDetailScreen(
                                 color = Color.Gray
                             )
                             Text(
-                                text = "82%",
+                                text = "$accuracyPercentage%",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF388E3C) // Green
@@ -237,17 +436,52 @@ fun IssueDetailScreen(
                     Text("Is this report accurate?", color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
 
+
+
                     // Simple Slider for visual representation
-                    Slider(
-                        value = 0.82f,
-                        onValueChange = {},
-                        enabled = false, // Read-only
-                        colors = SliderDefaults.colors(
-                            disabledThumbColor = Color.Transparent,
-                            disabledActiveTrackColor = Color(0xFF388E3C), // Green
-                            disabledInactiveTrackColor = Color(0xFFD32F2F) // Red
-                        )
+//                    Slider(
+//                        value = accuracyRatio,
+//                        onValueChange = {},
+//                        enabled = false, // Read-only
+//                        colors = SliderDefaults.colors(
+//                            disabledThumbColor = Color.Transparent,
+//                            disabledActiveTrackColor = Color(0xFF388E3C), // Green
+//                            disabledInactiveTrackColor = Color(0xFFD32F2F) // Red
+//                        )
+//                    )
+                    // 2. THE MAGIC: Tell Compose to smoothly animate to that target!
+                    val animatedRatio by animateFloatAsState(
+                        targetValue = accuracyRatio,
+                        animationSpec = tween(
+                            durationMillis = 800, // Takes 0.8 seconds to slide into place
+                            easing = FastOutSlowInEasing // Starts fast, slows down smoothly at the end
+                        ),
+                        label = "AccuracyBarAnimation"
                     )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                            // 1. This clips the entire container into a perfect pill shape
+                            .clip(RoundedCornerShape(50))
+                            // 2. light gray if invalid then red
+                            .background(if (totalVotes > 0) Color(0xFFD32F2F) else Color.LightGray)
+//                        )
+                    )
+                    {
+                        // We always keep this box here so it can animate smoothly
+                        Box(
+                            modifier = Modifier
+                                // Use the animated fraction to slide the width
+                                .fillMaxWidth(fraction = animatedRatio)
+                                .fillMaxHeight()
+                                // FILL COLOR: Transparent if 0 votes. Green if >= 1 vote.
+                                .background(if (totalVotes > 0) Color(0xFF388E3C) else Color.Transparent)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(5.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -260,19 +494,30 @@ fun IssueDetailScreen(
 
                     // Action Buttons
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ValidationButton(
+                        VoteButton(
+                            modifier = Modifier.weight(1f),
                             text = "Valid Issue",
+                            count = validCount,
                             icon = Icons.Default.CheckCircle,
-                            backgroundColor = Color(0xFFE8F5E9),
-                            contentColor = Color(0xFF388E3C),
-                            modifier = Modifier.weight(1f)
-                        )
-                        ValidationButton(
+                            isSelected = myCurrentVote == "valid",
+                            activeColor = Color(0xFF1A9058),       // Dark Green text/border
+                            activeContainerColor = Color(0xFFD1E7DD), // Light Green background
+                            onClick = {
+                                myCurrentVote = if (myCurrentVote == "valid") null else "valid"
+                                castVote(issue?.issueId ?: "none", myCurrentVote)
+                            })
+                        VoteButton(
+                            modifier = Modifier.weight(1f),
                             text = "Invalid Issue",
+                            count = invalidCount,
                             icon = Icons.Default.Cancel,
-                            backgroundColor = Color(0xFFFFEBEE),
-                            contentColor = Color(0xFFD32F2F),
-                            modifier = Modifier.weight(1f)
+                            isSelected = myCurrentVote == "invalid",
+                            activeColor = Color(0xB2EE3E3E),         // Dark Red text/border
+                            activeContainerColor = Color(0xFFF8D7DA),   // Light Red background
+                            onClick = {
+                                myCurrentVote = if (myCurrentVote == "invalid") null else "invalid"
+                                castVote(issue?.issueId ?: "none", myCurrentVote)
+                            }
                         )
                     }
                 }
@@ -339,6 +584,28 @@ fun IssueDetailScreen(
             }
         }
     }
+    // --- SHOW THE MAP DIALOG ---
+    if (showMapDialog) {
+        val lat= issue?.latitude ?: 0.0;
+        val lng = issue?.longitude ?: 0.0;
+
+        val issueLocation = if (lat != 0.0 && lng != 0.0) {
+            LatLng(lat, lng)
+        } else {
+            null // If invalid, it will safely fall back to Surat in the dialog
+        }
+
+        MapLocationPickerDialog(
+            initialLocation = issueLocation,
+            isReadOnly = true, // Hides the confirm button!
+            onDismiss = { showMapDialog = false },
+            onLocationConfirmed = { _, _, _ -> } // We leave this empty because there is no confirm button in Read-Only mode
+        )
+//        val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(LocalContext.current) }
+
+//        fetchCurrentLocation(
+//            LocalContext.current, )
+    }
 }
 
 // --- Helper Composables ---
@@ -359,34 +626,65 @@ fun TagChip(text: String, backgroundColor: Color, textColor: Color) {
 }
 
 @Composable
-fun ValidationButton(
+fun VoteButton(
+    modifier: Modifier = Modifier,
     text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    backgroundColor: Color,
-    contentColor: Color,
-    modifier: Modifier = Modifier
+    count: Int,
+    icon: ImageVector,
+    isSelected: Boolean,
+    activeColor: Color,
+    activeContainerColor: Color,
+    onClick: () -> Unit
 ) {
     Button(
-        onClick = { /* TODO */ },
+        onClick = onClick,
+        modifier = modifier.height(72.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = backgroundColor,
-            contentColor = contentColor
+            containerColor = if (isSelected) activeContainerColor else Color.White,
+            contentColor = if (isSelected) activeColor else Color.Gray
         ),
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier.height(50.dp),
-        contentPadding = PaddingValues(0.dp)
+        border = BorderStroke(
+            width = 2.dp,
+            color = if (isSelected) activeColor else Color.LightGray
+        ),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(text = text, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize()
+        )
+        {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "$text ($count)",
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            )
         }
     }
 }
+fun castVote(issueId: String, newVote: String?) {
+    val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+    val userVoteRef = FirebaseDatabase.getInstance().getReference("issue_votes")
+        .child(issueId).child(userId)
 
+    if (newVote == null) {
+        // If they toggle it off, remove them from the folder
+        userVoteRef.removeValue()
+    } else {
+        // Otherwise, save "valid" or "invalid" under their User ID
+        userVoteRef.setValue(newVote)
+    }
+}
 @Preview(widthDp = 500 , heightDp = 1500)
 @Composable
 fun IssueDetailScreenPreview() {
     CivicConnectTheme {
-        IssueDetailScreen("2" , onBackClick = {})
+        IssueDetailScreen( CivicIssue() , onBackClick = {})
     }
 }

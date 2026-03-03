@@ -1,9 +1,13 @@
 package com.example.civicconnectai.bottomNavScreens
 
+import CivicIssue
+import IssueViewModel
 import android.Manifest
 import android.R.attr.onClick
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,15 +37,32 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.civicconnectai.addissue.checkGpsAndFetchLocation
+import com.example.civicconnectai.addissue.fetchCurrentLocation
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
-    reportIssueScreen: () -> Unit
+    viewModel: IssueViewModel,
+
+    reportIssueScreen: () -> Unit ,
+    onIssueClick: (String) -> Unit
 ) {
     val context = LocalContext.current
+
+    val coroutineScope = rememberCoroutineScope()
+
+    val issuesList by viewModel.issuelist.collectAsState()
 
     val scope = rememberCoroutineScope()
 
@@ -60,29 +81,79 @@ fun MapScreen(
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        isLocationPermissionGranted = isGranted
+
+
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(21.1702, 72.8311), 12f)
     }
 
-    LaunchedEffect(Unit) {
-        if (!isLocationPermissionGranted) {
-            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    // slide for min detail about issue
+    var selectedIssue by remember { mutableStateOf<CivicIssue?>(null) }
+    var showIssueSheet by remember { mutableStateOf(false) }
+
+
+
+
+// permission launcher
+    // ADD THIS LAUNCHER: It listens for the user to click "OK" on the GPS popup
+    val gpsSettingLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // The user clicked "OK" and GPS is now ON!
+            fetchCurrentLocation(context, fusedLocationClient) { latLng ->
+                coroutineScope.launch {
+                    cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+                }
+            }
+        } else {
+            Toast.makeText(context, "GPS is required to find your location", Toast.LENGTH_SHORT).show()
         }
     }
 
-    val sanFrancisco = LatLng(37.7749, -122.4194)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(sanFrancisco, 12f)
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        isLocationPermissionGranted = isGranted
+        if (isGranted) {
+            // Permission granted! Fetch the location
+            checkGpsAndFetchLocation(context, gpsSettingLauncher) {
+                fetchCurrentLocation(context, fusedLocationClient) { latLng ->
+                    coroutineScope.launch {
+                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+                    }
+                }
+            }
+        } else {
+            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+        }
     }
+
+
+
+    LaunchedEffect(Unit) {
+        if (!isLocationPermissionGranted) {
+            // 1. Permission not granted yet? Ask for it!
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        } else {
+            // 2. Permission ALREADY granted? Move the camera immediately!
+            checkGpsAndFetchLocation(context, gpsSettingLauncher) {
+                fetchCurrentLocation(context, fusedLocationClient) { latLng ->
+                    coroutineScope.launch {
+                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+                    }
+                }
+            }
+        }
+    }
+
 
     // --- MAIN LAYOUT: COLUMN ---
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            // Pushes content below the system status bar
+        // Pushes content below the system status bar
     ) {
 
         // 1. TITLE SECTION (Outside the Map)
@@ -108,12 +179,13 @@ fun MapScreen(
                 .fillMaxWidth()
         ) {
             // LAYER A: The Google Map (Background)
+            val mapProperties = remember(isLocationPermissionGranted) {
+                MapProperties(isMyLocationEnabled = isLocationPermissionGranted)
+            }
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(
-                    isMyLocationEnabled = isLocationPermissionGranted
-                ),
+                properties = mapProperties,
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
                     myLocationButtonEnabled = false,
@@ -121,116 +193,212 @@ fun MapScreen(
                     mapToolbarEnabled = false
                 )
             ) {
-                Marker(state = MarkerState(position = LatLng(37.7849, -122.4294)), title = "Critical Issue")
-                Marker(state = MarkerState(position = LatLng(37.7649, -122.4094)), title = "Resolved Issue")
-            }
+                issuesList.forEach { issue ->
+                    val lat = issue.latitude
+                    val lng = issue.longitude
 
-            // LAYER B: Filter Chips (Floating ON TOP of Map)
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter) // Pinned to top of Map
-                    .fillMaxWidth()
-                    .padding(top = 16.dp) // Spacing from the Title
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MapFilterChip(label = "All Issues", selected = true, color = Color(0xFF5B75E6))
-                MapFilterChip(label = "Critical", selected = false, color = Color(0xFFD32F2F))
-                MapFilterChip(label = "Resolved", selected = false, color = Color(0xFF388E3C))
-                MapFilterChip(label = "My Reports", selected = false, color = Color.Gray)
-            }
-
-            // LAYER C: Controls (Zoom/Location)
-            Column(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                MapControlButton(icon = Icons.Default.Add ,
-                    onClick = {
-                    scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) }
-                })
-                MapControlButton(icon = Icons.Default.Remove ,
-                    onClick = {
-                        scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) }
+                    // Only plot issues that actually have valid GPS coordinates
+                    if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+                        Marker(
+                            state = MarkerState(position = LatLng(lat, lng)),
+                            icon = getCategoryMarkerIcon(issue.category),
+                            onClick = { marker ->
+                                selectedIssue = issue
+                                showIssueSheet = true
+                                true // Returning 'true' tells Google Maps: "I handled the click, don't show the default text popup."
+                            }
+                        )
                     }
+                }
+            }
+                // LAYER B: Filter Chips (Floating ON TOP of Map)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter) // Pinned to top of Map
+                        .fillMaxWidth()
+                        .padding(top = 16.dp) // Spacing from the Title
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MapFilterChip(label = "All Issues", selected = true, color = Color(0xFF5B75E6))
+                    MapFilterChip(label = "Pending", selected = false, color = Color(0xFFD32F2F))
+                    MapFilterChip(
+                        label = "In Progress",
+                        selected = false,
+                        color = Color(0xFFD32F2F)
                     )
-                MapControlButton(icon = Icons.Default.MyLocation ,
-                    onClick = {
-                        if (isLocationPermissionGranted) {
-                            try {
-                                @SuppressLint("MissingPermission") // We checked permission above
-                                val locationResult = fusedLocationClient.lastLocation
-                                locationResult.addOnCompleteListener { task ->
-                                    if (task.isSuccessful && task.result != null) {
-                                        val userLocation = LatLng(task.result.latitude, task.result.longitude)
-                                        scope.launch {
-                                            cameraPositionState.animate(
-                                                CameraUpdateFactory.newLatLngZoom(userLocation, 15f)
-                                            )
+                    MapFilterChip(label = "Resolved", selected = false, color = Color(0xFF388E3C))
+                    MapFilterChip(label = "My Reports", selected = false, color = Color.Gray)
+                }
+
+                // LAYER C: Controls (Zoom/Location)
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    MapControlButton(
+                        icon = Icons.Default.Add,
+                        onClick = {
+                            scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomIn()) }
+                        })
+                    MapControlButton(
+                        icon = Icons.Default.Remove,
+                        onClick = {
+                            scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomOut()) }
+                        }
+                    )
+                    MapControlButton(
+                        icon = Icons.Default.MyLocation,
+                        onClick = {
+                            if (isLocationPermissionGranted) {
+                                try {
+                                    @SuppressLint("MissingPermission") // We checked permission above
+                                    val locationResult = fusedLocationClient.lastLocation
+                                    locationResult.addOnCompleteListener { task ->
+                                        if (task.isSuccessful && task.result != null) {
+                                            val userLocation =
+                                                LatLng(task.result.latitude, task.result.longitude)
+                                            scope.launch {
+                                                cameraPositionState.animate(
+                                                    CameraUpdateFactory.newLatLngZoom(
+                                                        userLocation,
+                                                        15f
+                                                    )
+                                                )
+                                            }
                                         }
                                     }
+                                } catch (e: SecurityException) {
+                                    // Handle exception if permission revoked
                                 }
-                            } catch (e: SecurityException) {
-                                // Handle exception if permission revoked
+                            } else {
+                                // Ask for permission again if they clicked but didn't grant it
+                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                             }
-                        } else {
-                            // Ask for permission again if they clicked but didn't grant it
-                            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+
                         }
+                    )
+                }
 
+//                // LAYER D: Floating Action Button
+//                FloatingActionButton(
+//                    onClick = { reportIssueScreen() },
+//                    containerColor = Color(0xFF5B75E6),
+//                    contentColor = Color.White,
+//                    shape = RoundedCornerShape(50),
+//                    modifier = Modifier
+//                        .align(Alignment.BottomEnd)
+//                        .padding(16.dp)
+//                        .size(64.dp)
+//                ) {
+//                    Icon(
+//                        imageVector = Icons.Default.Add,
+//                        contentDescription = "Report Issue",
+//                        modifier = Modifier.size(32.dp)
+//                    )
+//                }
+                // for showing bottom card view
+                if (showIssueSheet && selectedIssue != null) {
+                    val issue = selectedIssue!! // Safe to unwrap because we checked for null
+
+                    ModalBottomSheet(
+                        onDismissRequest = { showIssueSheet = false },
+                        containerColor = Color.White
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, bottom = 32.dp)
+                        ) {
+
+                            // 1. THE IMAGE IS SAFE HERE!
+                            if (!issue.imageUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(issue.imageUrl)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = "Issue Image",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.LightGray)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+
+                            // 2. The Details
+                            Text(
+                                text = issue.title ?: "Reported Issue",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "${issue.category} • ${issue.status}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // 3. Navigate to Full Detail Screen
+                            Button(
+                                onClick = {
+                                    showIssueSheet = false
+                                    issue.issueId?.let { id -> onIssueClick(id) }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B75E6))
+                            ) {
+                                Text("View Full Details" , color = Color.White)
+                            }
+                        }
                     }
-                )
-            }
-
-            // LAYER D: Floating Action Button
-            FloatingActionButton(
-                onClick = { reportIssueScreen() },
-                containerColor = Color(0xFF5B75E6),
-                contentColor = Color.White,
-                shape = RoundedCornerShape(50),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .size(64.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Report Issue",
-                    modifier = Modifier.size(32.dp)
-                )
+                }
             }
         }
-    }
 }
 
 // --- Helper Composables ---
 
-@Composable
-fun MapFilterChip(label: String, selected: Boolean, color: Color) {
-    val backgroundColor = if (selected) color else Color.White
-    val textColor = if (selected) Color.White else Color.Black
-    val borderColor = if (selected) Color.Transparent else Color.LightGray
+    @Composable
+    fun MapFilterChip(label: String, selected: Boolean, color: Color) {
+        val backgroundColor = if (selected) color else Color.White
+        val textColor = if (selected) Color.White else Color.Black
+        val borderColor = if (selected) Color.Transparent else Color.LightGray
 
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = backgroundColor,
-        modifier = Modifier
-            .height(36.dp)
-            .border(1.dp, borderColor, RoundedCornerShape(50))
-            .shadow(if (selected) 4.dp else 2.dp, RoundedCornerShape(50))
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp)) {
-            Text(text = label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = textColor)
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = backgroundColor,
+            modifier = Modifier
+                .height(36.dp)
+                .border(1.dp, borderColor, RoundedCornerShape(50))
+                .shadow(if (selected) 4.dp else 2.dp, RoundedCornerShape(50))
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = textColor
+                )
+            }
         }
     }
-}
 
-@Composable
-fun MapControlButton(icon: ImageVector,
-                     onClick: () -> Unit) {
+    @Composable
+    fun MapControlButton(
+        icon: ImageVector,
+        onClick: () -> Unit
+    ) {
         Surface(
             shape = CircleShape,
             color = Color.White,
@@ -246,10 +414,13 @@ fun MapControlButton(icon: ImageVector,
         }
     }
 
-@Preview
-@Composable
-fun MapScreenPreview() {
-    CivicConnectTheme {
-        MapScreen(reportIssueScreen = {})
+    fun getCategoryMarkerIcon(category: String?): BitmapDescriptor {
+        val hue = when (category) {
+            "Pothole" -> BitmapDescriptorFactory.HUE_ORANGE
+            "Streetlight" -> BitmapDescriptorFactory.HUE_AZURE   // Light Blue
+            "Graffiti" -> BitmapDescriptorFactory.HUE_YELLOW
+            "Trash" -> BitmapDescriptorFactory.HUE_GREEN
+            else -> BitmapDescriptorFactory.HUE_RED        // Default color
+        }
+        return BitmapDescriptorFactory.defaultMarker(hue)
     }
-}

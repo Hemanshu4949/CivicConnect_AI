@@ -1,5 +1,7 @@
 package com.example.civicconnectai
 
+import CivicIssue
+import IssueViewModel
 import android.animation.ObjectAnimator
 import android.os.Bundle
 import android.util.Log
@@ -14,9 +16,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.animation.doOnEnd
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,14 +34,18 @@ import com.example.civicconnectai.authentication.LoginScreen
 import com.example.civicconnectai.authentication.SignUpScreen
 import com.example.civicconnectai.bottomNavScreens.IssueDetailScreen
 import com.example.civicconnectai.bottomNavScreens.MapScreen
-import com.example.civicconnectai.bottomNavScreens.ReportIssueScreen
+import com.example.civicconnectai.addissue.ReportIssueScreen
 import com.example.civicconnectai.splashScreen.VideoSplashScreen
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+
 
 //        val splashScreen = installSplashScreen()
 
@@ -79,6 +91,8 @@ class MainActivity : ComponentActivity() {
 //            delay(5000) // Wait for 3 seconds (3000 ms)
 //            isSplashVisible = false
 //        }
+
+
         setContent {
             CivicConnectTheme {
                 Surface(
@@ -87,6 +101,30 @@ class MainActivity : ComponentActivity() {
                 ) {
                     //  Get the current user status
                     val auth = FirebaseAuth.getInstance()
+
+                    // --- 1. THE SHARED STATE --- this will contain the data fetched from firebase and will be used through out the app
+                    var masterIssuesList by remember { mutableStateOf<List<CivicIssue>>(emptyList()) }
+                    var isLoading by remember { mutableStateOf(true) }
+
+
+                    // --- 2. THE FIREBASE FETCH (Shared by all screens) ---
+                    LaunchedEffect(Unit) {
+                        val databaseRef = FirebaseDatabase.getInstance().getReference("issues")
+                        databaseRef.addValueEventListener(object : ValueEventListener {
+                            override fun onDataChange(snapshot: DataSnapshot) {
+                                val tempIssues = mutableListOf<CivicIssue>()
+                                for (childSnapshot in snapshot.children) {
+                                    childSnapshot.getValue(CivicIssue::class.java)?.let { tempIssues.add(it) }
+                                }
+                                masterIssuesList = tempIssues.sortedByDescending { it.timestamp }
+                                isLoading = false
+                            }
+                            override fun onCancelled(error: DatabaseError) {
+                                isLoading = false
+                            }
+                        })
+                    }
+
 
                     // get the required page as per the logged in status
 //                    var startRoute by remember { mutableStateOf("loading") }
@@ -115,6 +153,7 @@ class MainActivity : ComponentActivity() {
 
                     // 1. Create the "Stage Manager" (Controller)
                     val navController = rememberNavController()
+                    val sharedViewModel: IssueViewModel = viewModel()
 
                     // 2. Define the "Stage" (NavHost)
                     // startDestination tells it which screen to show first
@@ -287,7 +326,12 @@ class MainActivity : ComponentActivity() {
                                 MapScreen(
                                     reportIssueScreen = {
                                         navController.navigate("report_issue")
-                                    }
+                                    },
+                                    viewModel = sharedViewModel,
+                                    onIssueClick = { issueId ->
+                                        // Navigate to Report Issue (Editable = False)
+                                        // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
+                                        navController.navigate("issue_detail/$issueId")} ,
                                 )
                             }
 
@@ -331,8 +375,11 @@ class MainActivity : ComponentActivity() {
                                 // You can retrieve the ID if needed:
                                 val issueId = backStackEntry.arguments?.getString("issueId")
 
+                                // INSTANTLY find the issue from the list we already have
+                                val selectedIssue = masterIssuesList.find { it.issueId == issueId }
+
                                 IssueDetailScreen(
-                                    issueId = issueId,
+                                    issue = selectedIssue,
                                     onBackClick = { navController.popBackStack() }
                                 )
                             }

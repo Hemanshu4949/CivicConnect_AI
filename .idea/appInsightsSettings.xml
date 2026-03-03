@@ -9,10 +9,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.example.civicconnectai" />
-                  <option name="mobileSdkAppId" value="1:420490105682:android:dda70541281077045f208b" />
-                  <option name="projectId" value="civicconnectai-ad11e" />
-                  <option name="projectNumber" value="420490105682" />
+                  <option name="appId" value="com.socialwork.civicconnectai" />
+                  <option name="mobileSdkAppId" value="1:256487267638:android:ff08aaf92dfd95ac13a797" />
+                  <option name="projectId" value="civicconnectai-9d8b9" />
+                  <option name="projectNumber" value="256487267638" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

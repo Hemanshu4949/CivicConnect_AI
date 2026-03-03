@@ -1,42 +1,42 @@
 {
   "project_info": {
-    "project_number": "420490105682",
-    "firebase_url": "https://civicconnectai-ad11e-default-rtdb.firebaseio.com",
-    "project_id": "civicconnectai-ad11e",
-    "storage_bucket": "civicconnectai-ad11e.firebasestorage.app"
+    "project_number": "256487267638",
+    "firebase_url": "https://civicconnectai-9d8b9-default-rtdb.firebaseio.com",
+    "project_id": "civicconnectai-9d8b9",
+    "storage_bucket": "civicconnectai-9d8b9.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:420490105682:android:dda70541281077045f208b",
+        "mobilesdk_app_id": "1:256487267638:android:ff08aaf92dfd95ac13a797",
         "android_client_info": {
-          "package_name": "com.example.civicconnectai"
+          "package_name": "com.socialwork.civicconnectai"
         }
       },
       "oauth_client": [
         {
-          "client_id": "420490105682-efdh608o3kiv3qh4d2enkgnncurkrikl.apps.googleusercontent.com",
+          "client_id": "256487267638-iiqeqidv4natbjfd56idk21tj8m1bbo3.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.example.civicconnectai",
+            "package_name": "com.socialwork.civicconnectai",
             "certificate_hash": "398446de883f4b00608316cd5d32c215f25f81db"
           }
         },
         {
-          "client_id": "420490105682-o01p926s3coelgn08ghvoninu1lo0p2f.apps.googleusercontent.com",
+          "client_id": "256487267638-0b3eq79jh9vjtkg9nrs4s736dd977p6s.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyDY-bpMOyGo5nazb96fnffm0JdKaO_tXAU"
+          "current_key": "AIzaSyD1rH08hgdi205xjq7XiuyTmcFpiX9SFxA"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "420490105682-o01p926s3coelgn08ghvoninu1lo0p2f.apps.googleusercontent.com",
+              "client_id": "256487267638-0b3eq79jh9vjtkg9nrs4s736dd977p6s.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

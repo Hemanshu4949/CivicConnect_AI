@@ -24,7 +24,7 @@
         android:theme="@style/Theme.CivicConnectAI">
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCJwPdocTOiI8M1pW7i4FEvNy5CA4o8AjM" />
+            android:value="AIzaSyCZeSw8_NRrgUu1Iiz4f4bVIXd5pZSD5uQ" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

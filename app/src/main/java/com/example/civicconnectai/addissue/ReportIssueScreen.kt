@@ -1,8 +1,12 @@
-package com.example.civicconnectai.bottomNavScreens
+package com.example.civicconnectai.addissue
 
+import CivicIssue
 import android.Manifest
+import android.R.attr.icon
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -21,54 +25,91 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.civicconnectai.SupabaseManager
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
+import io.github.jan.supabase.storage.storage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportIssueScreen(
-    // 1. New Boolean to control the mode (Edit vs View)
-
-    // 2. Data parameters (Used to populate the view if isEditable = false)
     existingCategory: String = "Select Issue Type",
-    existingDescription: String = "",
-    existingLocation: String = "123 Main St, Springfield",
-
     onBackClick: () -> Unit,
     onSubmitClick: () -> Unit
 ) {
 
+    // 1. Create the Focus and Keyboard controllers
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+
+
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+
     // State variables (Initialized with passed data)
-    var description by remember { mutableStateOf(existingDescription) }
+    var title by remember {mutableStateOf( "")}
+    var description by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(existingCategory) }
     var expandedCategory by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
-    // Image State: Can be a Uri (Gallery) OR a Bitmap (Camera)
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
-    var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+         // Image State: Can be a Uri (Gallery) OR a Bitmap (Camera)
+        var imageUri by remember { mutableStateOf<Uri?>(null) }
+        var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    // Dialog State
-    var showImageSourceDialog by remember { mutableStateOf(false) }
 
-    // Dropdown options
-    val categories = listOf("Pothole", "Streetlight", "Graffiti", "Trash", "Other")
+         // Dropdown options
+        val categories = listOf("Pothole", "Streetlight", "Graffiti", "Trash", "Other")
+
+    //  Popup Map state
+    var locationText by remember { mutableStateOf("") }
+    var locationLat by remember { mutableStateOf(0.0) }
+    var locationLng by remember { mutableStateOf(0.0) }
+    var showMapPopup by remember { mutableStateOf(false) }
+
+    // State to control if the text field can be typed in
+    var isLocationEditable by remember { mutableStateOf(false) }
+
+
+    if (showMapPopup) {
+        MapLocationPickerDialog(
+            onDismiss = {
+                showMapPopup = false // Close without saving
+            },
+            onLocationConfirmed = { address , lat , lng  ->
+                locationText = address
+                locationLat = lat
+                locationLng = lng
+                showMapPopup = false  // Close the map
+            },
+
+        )
+    }
+
 
     // --- LAUNCHERS ---
 
@@ -156,7 +197,7 @@ fun ReportIssueScreen(
                             .crossfade(true)
                             .build(),
                         contentDescription = "Selected Image",
-                        contentScale = ContentScale.FillBounds,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (imageBitmap != null) {
@@ -171,7 +212,7 @@ fun ReportIssueScreen(
                         Icon(
                             imageVector = Icons.Default.AddAPhoto,
                             contentDescription = null,
-                            tint = Color.Gray,
+                            tint = Color(0xFF5B75E6),
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -194,7 +235,8 @@ fun ReportIssueScreen(
                     Icon(
                         Icons.Default.CameraAlt,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp) ,
+                        tint = Color(0xFF5B75E6)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Camera")
@@ -215,11 +257,53 @@ fun ReportIssueScreen(
                     Icon(
                         Icons.Default.PhotoLibrary,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp) ,
+                        tint = Color(0xFF5B75E6)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Gallery")
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ---  Title Section ---
+            SectionTitle("TITLE")
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth() ,
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                TextField(
+                    value = title,
+                    onValueChange = { title = it } , // Prevent change if not editable
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Title,
+                            contentDescription = null,
+                            tint = Color(0xFF5B75E6)
+                        )
+                    },
+                    placeholder = {
+
+                            Text(
+                                "Title ...",
+                                color = Color.Gray
+                            )
+                    },
+                    modifier = Modifier.fillMaxSize().padding(start = 10.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    textStyle = MaterialTheme.typography.bodyMedium
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -284,6 +368,8 @@ fun ReportIssueScreen(
                 }
             }
 
+
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // --- 3. Details Section ---
@@ -300,11 +386,26 @@ fun ReportIssueScreen(
                 TextField(
                     value = description,
                     onValueChange = { description = it }, // Prevent change if not editable
+                    leadingIcon = {
+                        Box(
+                            // 1. Stretch the box to the full 120dp height
+                            modifier = Modifier.fillMaxHeight().padding(top = 16.dp),
+                            // 2. Pin the icon to the top center!
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Description,
+                                contentDescription = null,
+                                tint = Color(0xFF5B75E6)
+                            )
+                        }
+                    },
                     placeholder = {
-                        Text(
-                            "Please describe the issue in detail...",
-                            color = Color.Gray
-                        )
+
+                            Text(
+                                "Please describe the issue in detail...",
+                                color = Color.Gray
+                            )
                     },
                     modifier = Modifier.fillMaxSize(),
                     colors = TextFieldDefaults.colors(
@@ -336,24 +437,46 @@ fun ReportIssueScreen(
                             .fillMaxWidth()
                             .height(120.dp)
                             .background(Color(0xFFE0E0E0))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Map,
-                            contentDescription = null,
-                            tint = Color.Gray,
+                    )
+                    {
+                        IconButton(
+                            onClick = { showMapPopup = true} ,
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .size(48.dp)
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .background(Color(0xFFE0E0E0))
                         )
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color(0xFF5B75E6),
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .offset(y = (-10).dp)
-                                .size(40.dp)
-                        )
+
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size(48.dp)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = Color(0xFF5B75E6),
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .offset(y = (-10).dp)
+                                    .size(40.dp)
+                            )
+                        }
+                    }
+                    //  Watch for changes to `isLocationEditable`
+                    LaunchedEffect(isLocationEditable) {
+                        if (isLocationEditable) {
+                            // Give it a tiny delay to ensure the TextField is completely unlocked first
+                            focusRequester.requestFocus()
+                            keyboardController?.show()
+                        } else {
+                            // Hide keyboard when they click "Check" (Done)
+                            keyboardController?.hide()
+                        }
                     }
 
                     // Address Row
@@ -378,15 +501,40 @@ fun ReportIssueScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = existingLocation,
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = Color.Black
+                            TextField(
+                                value = locationText,
+                                onValueChange = { locationText = it },
+                                // When isLocationEditable is false, readOnly is true (Locked)
+                                // When isLocationEditable is true, readOnly is false (You can type)
+                                readOnly = !isLocationEditable,
+
+                                trailingIcon = {
+                                    if (isLocationEditable) {
+                                        // SHOW DONE BUTTON (User is currently typing)
+                                        IconButton(
+                                            onClick = {
+                                                isLocationEditable = false // Lock the field when done
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Done Editing",
+                                                tint = MaterialTheme.colorScheme.primary // Make it pop visually
+                                            )
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(0.dp).background(Color.White) ,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White,
+                                    disabledContainerColor = Color.White,
+                                )
                             )
                         }
 
                         IconButton(
-                            onClick = { /* Edit Location */ },
+                            onClick = { isLocationEditable = true },
                             modifier = Modifier
                                 .background(Color(0xFFF8F9FA), shape = RoundedCornerShape(50))
                                 .size(36.dp)
@@ -415,12 +563,22 @@ fun ReportIssueScreen(
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                        else if (title.isBlank())
+                    {
+                        Toast.makeText(context, "Please Enter title. ", Toast.LENGTH_SHORT)
+                            .show()
+                        }
                     // 2. Check Text Fields
                     else if (selectedCategory == "Select Issue Type") {
                         Toast.makeText(context, "Please enter an issue title.", Toast.LENGTH_SHORT)
                             .show()
-                    } else if (existingLocation.isBlank()) {
-                        Toast.makeText(context, "Please enter the location.", Toast.LENGTH_SHORT)
+                    }
+                    else if (locationLng == 0.0 && locationLat == 0.0) {
+                        Toast.makeText(context, "Please select location on map", Toast.LENGTH_SHORT)
+                            .show()
+                    }
+                    else if (locationText.isBlank()) {
+                        Toast.makeText(context, "Please enter the location text.", Toast.LENGTH_SHORT)
                             .show()
                     } else if (description.isBlank()) {
                         Toast.makeText(context, "Please enter a description.", Toast.LENGTH_SHORT)
@@ -428,29 +586,116 @@ fun ReportIssueScreen(
                     }
                     // 3. Success -> Submit
                     else {
-                        onSubmitClick()
+                        val currentUser = FirebaseAuth.getInstance().currentUser
+                        if (currentUser == null) {
+                            Toast.makeText(
+                                context,
+                                "You must be logged in to report an issue",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@Button
+                        }
+
+                        isSubmitting = true
+
+                        // Now 'scope' perfectly resolves!
+                        scope.launch {
+                            try {
+                                val databaseRef =
+                                    FirebaseDatabase.getInstance().getReference("issues")
+                                val newIssueId = databaseRef.push().key ?: return@launch
+
+                                var finalImageUrl = ""
+                                if (imageUri != null) {
+                                    val uploadedUrl =
+                                        uploadImageToSupabase(
+                                            context, imageUri!!, imageBitmap , newIssueId
+                                        )
+                                    if (uploadedUrl != null) {
+                                        finalImageUrl = uploadedUrl
+                                    }
+                                    else{
+                                        Toast.makeText(
+                                            context,
+                                            "Issue not Reported",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+
+                                val newIssue = CivicIssue(
+                                    issueId = newIssueId,
+                                    userId = currentUser.uid,
+                                    title = title ,
+                                    category = selectedCategory,
+                                    description = description,
+                                    latitude = locationLat,
+                                    longitude = locationLng,
+                                    address = locationText,
+                                    imageUrl = finalImageUrl,
+                                    status = "Pending",
+                                    timestamp = System.currentTimeMillis() ,
+                                    votevalid = 0L,
+                                    voteinvalid = 0L,
+                                )
+
+                                databaseRef.child(newIssueId).setValue(newIssue)
+                                    .addOnSuccessListener {
+                                        isSubmitting = false
+                                        Toast.makeText(
+                                            context,
+                                            "Issue reported successfully!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        onSubmitClick()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        isSubmitting = false
+                                        Toast.makeText(
+                                            context,
+                                            "Failed to submit: ${e.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+
+                            } catch (e: Exception) {
+                                isSubmitting = false
+                                Toast.makeText(
+                                    context,
+                                    "Error: ${e.localizedMessage}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
+                    },
+                enabled = !isSubmitting,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp) ,
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFFFC107)
                 )
             ) {
-                Text(
-                    text = "Submit Complaint",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = Color.Black
-                )
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                else {
+                    Text(
+                        text = "Submit Complaint",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = Color.Black
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -502,6 +747,68 @@ fun ReportIssueScreen(
             )
         }
     }
+
+suspend fun uploadImageToSupabase(
+    context: Context,
+    imageUri: Uri?,
+    imageBitmap: Bitmap?,
+    issueId: String // e.g., the unique ID of the report
+): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            // 1. Get the Firebase User UID
+            val user = FirebaseAuth.getInstance().currentUser
+            if (user == null) {
+                Log.e("SupabaseUpload", "User not logged in")
+                return@withContext null
+            }
+            val uid = user.uid
+
+            // 2. Convert EITHER the Uri or the Bitmap into a ByteArray
+            val byteArray: ByteArray? = when {
+                imageUri != null -> {
+                    val inputStream = context.contentResolver.openInputStream(imageUri)
+                    val bytes = inputStream?.readBytes()
+                    inputStream?.close()
+                    bytes
+                }
+                imageBitmap != null -> {
+                    val stream = ByteArrayOutputStream()
+                    // Compress the camera bitmap to JPEG format (100% quality)
+                    imageBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+                    stream.toByteArray()
+                }
+                else -> null
+            }
+
+            if (byteArray == null) {
+                Log.e("SupabaseUpload", "Could not read image data")
+                return@withContext null
+            }
+
+            // 3. Create a unique path: "UID/issueId_timestamp.jpg"
+            // This groups all images by the user who uploaded them
+            val fileName = "$uid/${issueId}.jpg"
+
+            // 4. Upload to the bucket
+                val bucket = SupabaseManager.client.storage.from("civicconnectai")
+            bucket.upload(path = fileName, data = byteArray) {
+                upsert = false
+            }
+
+            // 5. Get the Public URL so you can save it to your Firebase Realtime Database
+            val publicUrl = bucket.publicUrl(fileName)
+            return@withContext publicUrl
+
+        } catch (e: Exception) {
+            Log.e("SupabaseUpload", "Upload failed: ${e.message}")
+            return@withContext null
+        }
+    }
+
+}
+
+
 
 // --- Preview for Editing ---
 @Preview(showBackground = true)
