@@ -45,8 +45,10 @@ import coil.request.ImageRequest
 import com.example.civicconnectai.addissue.checkGpsAndFetchLocation
 import com.example.civicconnectai.addissue.fetchCurrentLocation
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -62,7 +64,27 @@ fun MapScreen(
 
     val coroutineScope = rememberCoroutineScope()
 
+    // get's the selected chip value
+    var mapSelectedStatus by remember { mutableStateOf("All Issues") }
+
     val issuesList by viewModel.issuelist.collectAsState()
+
+    // 3. NEW: A locally filtered list just for the map pins
+    val mapPins = remember(issuesList, mapSelectedStatus) {
+        issuesList.filter { issue ->
+            when (mapSelectedStatus) {
+                "All Issues" -> true
+                "Pending" -> issue.status == "Pending"
+                "In Progress" -> issue.status == "In Progress"
+                "Resolved" -> issue.status == "Resolved"
+                "My Reports" -> {val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+
+                    // Only show the pin if the user is logged in AND their ID matches the issue's ID
+                    currentUserId != null && issue.userId == currentUserId}
+                else -> true
+            }
+        }
+    }
 
     val scope = rememberCoroutineScope()
 
@@ -118,10 +140,30 @@ fun MapScreen(
         if (isGranted) {
             // Permission granted! Fetch the location
             checkGpsAndFetchLocation(context, gpsSettingLauncher) {
-                fetchCurrentLocation(context, fusedLocationClient) { latLng ->
-                    coroutineScope.launch {
-                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+                try {
+                    @SuppressLint("MissingPermission")
+                    fusedLocationClient.getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        null
+                    ).addOnSuccessListener { location ->
+                        if (location != null) {
+                            val userLocation = LatLng(location.latitude, location.longitude)
+                            coroutineScope.launch {
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.newLatLngZoom(userLocation, 16f)
+                                )
+                            }
+                        } else {
+                            // Fallback just in case they are completely underground!
+                            Toast.makeText(
+                                context,
+                                "Searching for GPS signal...",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
+                } catch (e: SecurityException) {
+                    // Handled securely
                 }
             }
         } else {
@@ -193,7 +235,7 @@ fun MapScreen(
                     mapToolbarEnabled = false
                 )
             ) {
-                issuesList.forEach { issue ->
+                mapPins.forEach { issue ->
                     val lat = issue.latitude
                     val lng = issue.longitude
 
@@ -221,15 +263,16 @@ fun MapScreen(
                         .padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MapFilterChip(label = "All Issues", selected = true, color = Color(0xFF5B75E6))
-                    MapFilterChip(label = "Pending", selected = false, color = Color(0xFFD32F2F))
+                    MapFilterChip(label = "All Issues", selected = mapSelectedStatus == "All Issues", color = Color(0xFF5B75E6) , onClick = {mapSelectedStatus = "All Issues"})
+                    MapFilterChip(label = "Pending", selected = mapSelectedStatus == "Pending", color = Color(0xFFD32F2F), onClick = {mapSelectedStatus = "Pending"})
                     MapFilterChip(
                         label = "In Progress",
-                        selected = false,
-                        color = Color(0xFFD32F2F)
+                        selected = mapSelectedStatus == "In Progress",
+                        color = Color(0xFFFFE600),
+                        onClick = {mapSelectedStatus = "In Progress"}
                     )
-                    MapFilterChip(label = "Resolved", selected = false, color = Color(0xFF388E3C))
-                    MapFilterChip(label = "My Reports", selected = false, color = Color.Gray)
+                    MapFilterChip(label = "Resolved", selected = mapSelectedStatus == "Resolved", color = Color(0xFF388E3C) ,  onClick = {mapSelectedStatus = "Resolved"})
+                    MapFilterChip(label = "My Reports", selected = mapSelectedStatus == "My Reposts", color = Color.Gray, onClick = {mapSelectedStatus = "My Reposts"})
                 }
 
                 // LAYER C: Controls (Zoom/Location)
@@ -368,7 +411,7 @@ fun MapScreen(
 // --- Helper Composables ---
 
     @Composable
-    fun MapFilterChip(label: String, selected: Boolean, color: Color) {
+    fun MapFilterChip(label: String, selected: Boolean, color: Color , onClick: () -> Unit) {
         val backgroundColor = if (selected) color else Color.White
         val textColor = if (selected) Color.White else Color.Black
         val borderColor = if (selected) Color.Transparent else Color.LightGray
@@ -376,6 +419,7 @@ fun MapScreen(
         Surface(
             shape = RoundedCornerShape(50),
             color = backgroundColor,
+            onClick = onClick,
             modifier = Modifier
                 .height(36.dp)
                 .border(1.dp, borderColor, RoundedCornerShape(50))
