@@ -2,7 +2,12 @@ package com.example.civicconnectai.bottomNavScreens
 
 import CivicIssue
 import IssueViewModel
+import android.Manifest
+import android.content.Context
+import android.os.Build
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,19 +38,64 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.messaging.FirebaseMessaging
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: IssueViewModel,
+    defaultfilter : String,
     reportIssueScreen: () -> Unit,
     onIssueClick: (String) -> Unit
 ) {
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                Log.d("FCM", "Notification permission granted!")
+            } else {
+                Log.d("FCM", "Notification permission denied.")
+            }
+        }
+    )
+
+    // 2. Run this once when the Home Screen loads
+    LaunchedEffect(Unit) {
+        // Ask for permission if they are on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // 3. Grab the Device Token and save it to your Database!
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w("FCM", "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+
+            // Get new FCM registration token
+            val fcmToken = task.result
+            Log.e("FCM", "My Device Token is: $fcmToken")
+
+//            android.widget.Toast.makeText(LocalContext.current, "Token Generated!", android.widget.Toast.LENGTH_SHORT).show()
+
+            // Save it to Firebase Realtime Database under their user profile
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            if (currentUser != null) {
+                FirebaseDatabase.getInstance().getReference("users")
+                    .child(currentUser.uid)
+                    .child("fcmToken") // We save it in a new field called fcmToken
+                    .setValue(fcmToken)
+            }
+        }
+    }
 
 // 1. Collect Data States from ViewModel
     val filteredIssues by viewModel.filteredIssues.collectAsState()
@@ -54,6 +105,16 @@ fun HomeScreen(
     val selectedStatus by viewModel.selectedStatus.collectAsState()
     val sortBy by viewModel.sortBy.collectAsState()
 
+    // view all filter
+    val displayedIssues = remember(filteredIssues, defaultfilter) {
+        if (defaultfilter == "my_reports") {
+            // Filter by the current user's ID
+            val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+            filteredIssues.filter { it.userId == currentUserId }
+        } else {
+            filteredIssues
+        }
+    }
 
 
     // storing data from firebase
@@ -66,11 +127,20 @@ fun HomeScreen(
     //  Bottom Sheet State
     var showFilterSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var filterflag by remember {mutableStateOf(false)}
 
+    if (defaultfilter != "my_reports" || filterflag)
+    {
+        issuesList = filteredIssues
+    }
+    else
+    {
+        issuesList = displayedIssues
+    }
 
 
     //  Lists of your categories to map through
-    val categories = listOf("All", "Roads", "Water", "Electricity", "Public Property")
+    val categories = listOf("All", "Pothole", "Streetlight", "Graffiti", "Trash")
     val statuses = listOf("All", "Open", "Pending", "Resolved")
     val sortOptions = listOf("Newest", "Most Voted", "Closest to Me")
 
@@ -235,7 +305,7 @@ fun HomeScreen(
                     LazyColumn {
                         items(filteredIssues) { issue ->
                             ListItem(
-                                headlineContent = { Text(issue.category) },
+                                headlineContent = { Text(issue.title) },
                                 supportingContent = { Text(issue.address) },
                                 leadingContent = {
                                     Icon(
@@ -265,7 +335,8 @@ fun HomeScreen(
                         shape = RoundedCornerShape(20.dp), // Fully rounded to match
                         color = Color.White,
                         shadowElevation = 4.dp, // Matches SearchBar elevation
-                        onClick = { showFilterSheet = true }
+                        onClick = { showFilterSheet = true
+                            }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             val isFilterActive = selectedCategory != "All" || selectedStatus != "All"
@@ -349,7 +420,7 @@ fun HomeScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (filteredIssues.isEmpty()) {
+            } else if (issuesList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No issues reported yet. Be the first!", color = Color.Gray)
                 }
@@ -360,7 +431,7 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // This loops through every issue in your database
-                    items(filteredIssues) { issue ->
+                    items(issuesList) { issue ->
                         IssueCard(issue = issue, onClick = { onIssueClick(issue.issueId) })
                     }
                 }
@@ -426,7 +497,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // 4. Apply / Clear Buttons
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(end = 15.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     OutlinedButton(
                         onClick = {
                             // Reset everything
@@ -439,13 +510,14 @@ fun HomeScreen(
                         Text("Clear All")
                     }
 
-                    Button(
-                        onClick = { showFilterSheet = false },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B75E6))
-                    ) {
-                        Text("Apply Filters")
-                    }
+//                    Button(
+//                        onClick = { showFilterSheet = false
+//                            filterflag = true},
+//                        modifier = Modifier.weight(1f),
+//                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B75E6))
+//                    ) {
+//                        Text("Apply Filters")
+//                    }
                 }
             }
         }
@@ -527,7 +599,9 @@ fun IssueCard(
                     Text(
                         text = issue.address,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = Color.Gray,
+                        maxLines = 2 ,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 

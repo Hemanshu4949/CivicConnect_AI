@@ -7,6 +7,7 @@ import android.R.attr.onClick
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +52,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import com.example.civicconnectai.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -222,7 +224,9 @@ fun MapScreen(
         ) {
             // LAYER A: The Google Map (Background)
             val mapProperties = remember(isLocationPermissionGranted) {
-                MapProperties(isMyLocationEnabled = isLocationPermissionGranted)
+                MapProperties(isMyLocationEnabled = isLocationPermissionGranted,
+                mapType = MapType.HYBRID
+                )
             }
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
@@ -272,7 +276,7 @@ fun MapScreen(
                         onClick = {mapSelectedStatus = "In Progress"}
                     )
                     MapFilterChip(label = "Resolved", selected = mapSelectedStatus == "Resolved", color = Color(0xFF388E3C) ,  onClick = {mapSelectedStatus = "Resolved"})
-                    MapFilterChip(label = "My Reports", selected = mapSelectedStatus == "My Reposts", color = Color.Gray, onClick = {mapSelectedStatus = "My Reposts"})
+                    MapFilterChip(label = "My Reports", selected = mapSelectedStatus == "My Reports", color = Color.Gray, onClick = {mapSelectedStatus = "My Reports"})
                 }
 
                 // LAYER C: Controls (Zoom/Location)
@@ -458,13 +462,13 @@ fun MapScreen(
         }
     }
 
-    fun getCategoryMarkerIcon(category: String?): BitmapDescriptor {
-        val hue = when (category) {
-            "Pothole" -> BitmapDescriptorFactory.HUE_ORANGE
-            "Streetlight" -> BitmapDescriptorFactory.HUE_AZURE   // Light Blue
-            "Graffiti" -> BitmapDescriptorFactory.HUE_YELLOW
-            "Trash" -> BitmapDescriptorFactory.HUE_GREEN
-            else -> BitmapDescriptorFactory.HUE_RED        // Default color
-        }
-        return BitmapDescriptorFactory.defaultMarker(hue)
+fun getCategoryMarkerIcon(category: String?): BitmapDescriptor {
+    val hue = when (category) {
+        "Pothole" -> BitmapDescriptorFactory.HUE_ORANGE
+        "Streetlight" -> BitmapDescriptorFactory.HUE_AZURE   // Light Blue
+        "Graffiti" -> BitmapDescriptorFactory.HUE_YELLOW
+        "Trash" -> BitmapDescriptorFactory.HUE_GREEN
+        else -> BitmapDescriptorFactory.HUE_RED        // Default color
     }
+    return BitmapDescriptorFactory.defaultMarker(hue)
+}

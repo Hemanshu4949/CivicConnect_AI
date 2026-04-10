@@ -1,5 +1,6 @@
 package com.example.civicconnectai.authentication
 
+import android.util.Log
 import android.util.Patterns
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -80,6 +81,8 @@ fun SignUpScreen(
 
     // Loading State (to disable button while uploading)
     var isLoading by remember { mutableStateOf(false) }
+
+
 //    val isFormValid = fullName.isNotBlank() &&
 //            email.isNotBlank() &&
 //            password.isNotBlank() &&
@@ -377,41 +380,56 @@ fun SignUpScreen(
                                     if (task.isSuccessful) {
                                         val user = auth.currentUser
                                         val userId = user?.uid
+                                        Log.d("userid" , userId.toString());
 
                                         // 3. Save User Data to Database if needed
+                                        val userref = database.getReference("users").child(userId.toString())
                                         if (userId != null) {
                                             val userData = User(
                                                 name = user.displayName ?: "No Name",
                                                 email = user.email ?: "",
-                                                contactNumber = "" // Google doesn't provide phone usually
+                                                // Google doesn't provide phone usually
                                             )
-                                            database.getReference("users").child(userId)
-                                                .setValue(userData)
-                                                .addOnSuccessListener {
-                                                    isLoading = false
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Google Sign-In Successful!",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-
+                                            userref
+                                                .get()
+                                                .addOnSuccessListener {snapshot->
+                                                    if(!snapshot.exists())
+                                                    {
+                                                        userref.setValue(userData)
+                                                        isLoading = true
+                                                        Log.d("userid" , userId.toString()+"1");
+                                                    }
+                                                    else
+                                                    {
+                                                        isLoading = false
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Google Sign-In Successful!",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
                                                     val userId = auth.currentUser?.uid ?: ""
 
                                                     //  CHECK DATABASE FOR EXISTING PHONE NUMBER
-                                                    database.getReference("users").child(userId)
+                                                    database.getReference("users").child(userId).child("contactNumber")
                                                         .get()
                                                         .addOnSuccessListener { snapshot ->
-                                                            val existingPhone =
-                                                                snapshot.child("contactNumber").value as? String
+                                                            var existingPhone: String? = null
 
-                                                            if (existingPhone.isNullOrEmpty()) {
-                                                                //  NO PHONE FOUND -> SHOW INPUT FIELD
-                                                                isLoading = false
-                                                                showPhoneInput = true
-                                                            } else {
-                                                                //  PHONE EXISTS -> GO TO HOME
-                                                                isLoading = false
-                                                                onRegisterClick("SignInWithGoogle")
+                                                            if(snapshot.exists())
+                                                            {
+                                                                existingPhone =
+                                                                    snapshot.value as? String
+                                                            }
+                                                                if (existingPhone.isNullOrEmpty()) {
+                                                                    //  NO PHONE FOUND -> SHOW INPUT FIELD
+                                                                    isLoading = false
+                                                                    showPhoneInput = true
+                                                                } else {
+                                                                    //  PHONE EXISTS -> GO TO HOME
+                                                                    isLoading = false
+                                                                    showPhoneInput = false
+                                                                    onRegisterClick("SignInWithGoogle")
                                                             }
                                                         }
                                                         .addOnFailureListener {
@@ -551,6 +569,7 @@ fun SignUpScreen(
                             .addOnSuccessListener {
                                 // 4. Success! Now go to Home
                                 isLoading = false
+                                showPhoneInput = true ;
                                 onRegisterClick("SignInWithGoogle")
                             }
                             .addOnFailureListener { e ->

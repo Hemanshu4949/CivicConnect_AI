@@ -47,8 +47,7 @@ val filteredIssues: StateFlow<List<CivicIssue>> = combine(
     // A. Filter
     var currentList = list.filter { issue ->
         val matchesSearch = if (query.isBlank()) true else {
-            issue.title?.contains(query, ignoreCase = true) == true ||
-                    issue.description?.contains(query, ignoreCase = true) == true
+            issue.title.contains(query, ignoreCase = true) || issue.description.contains(query, ignoreCase = true)
         }
         val matchesCategory = if (category == "All") true else {
             issue.category == category

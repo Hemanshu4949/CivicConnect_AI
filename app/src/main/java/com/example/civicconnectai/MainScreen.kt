@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
 import com.example.civicconnectai.bottomNavScreens.HomeScreen
 import com.example.civicconnectai.bottomNavScreens.MapScreen
 import com.example.civicconnectai.bottomNavScreens.ProfileScreen
@@ -22,8 +24,11 @@ import com.example.civicconnectai.bottomNavScreens.ProfileScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    navController: NavHostController,
+    defaultfilter: String ,
     reportIssueScreen: () -> Unit,
-    onIssueClick: (String) -> Unit
+    onIssueClick: (String) -> Unit ,
+    onLogoutSuccess: () -> Unit
 // Pass this up from Home
 ) {
     // 1. This variable tracks which "Fragment" is visible
@@ -65,9 +70,9 @@ fun MainScreen(
         // We pass 'paddingValues' so the content doesn't get hidden behind the bottom bar
         Surface(modifier = Modifier.padding(paddingValues)) {
             when (selectedTab) {
-                "Home" -> HomeScreen(viewModel = sharedViewModel,reportIssueScreen = reportIssueScreen, onIssueClick = onIssueClick)
+                "Home" -> HomeScreen(viewModel = sharedViewModel, defaultfilter = defaultfilter , reportIssueScreen = reportIssueScreen, onIssueClick = onIssueClick)
                 "Map" -> MapScreen( viewModel = sharedViewModel, reportIssueScreen = reportIssueScreen, onIssueClick = onIssueClick) // You need to create this function
-                "Profile" -> ProfileScreen() // You need to create this function
+                "Profile" -> ProfileScreen(navController = navController ,viewModel = sharedViewModel , onIssueClick = onIssueClick , onLogoutSuccess = onLogoutSuccess ) // You need to create this function
             }
         }
     }

@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,15 +42,17 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.civicconnectai.addissue.MapLocationPickerDialog
-import com.example.civicconnectai.addissue.fetchCurrentLocation
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
-import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,8 +73,17 @@ fun IssueDetailScreen(
     // voting system variables
     val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
     var myCurrentVote by remember { mutableStateOf<String?>(null) }
-    var validCount by remember { mutableIntStateOf(0) }
-    var invalidCount by remember { mutableIntStateOf(0) }
+
+    // --- ADD THESE TWO LINES HERE ---
+    val coroutineScope = rememberCoroutineScope()
+    var debounceJob by remember { mutableStateOf<Job?>(null) }
+    // 1. The Server State: What does Firebase currently think? (From your DisposableEffect)
+    // Let's assume myCurrentVote is "valid" if they upvoted, or null if they haven't.
+    val serverHasVoted = (myCurrentVote == "valid")
+    var serverVote by remember { mutableStateOf<String?>(null) }
+
+
+
 
 //    val coroutineScope = rememberCoroutineScope()
 //
@@ -90,44 +102,76 @@ fun IssueDetailScreen(
 //        }
 //    }
 
+//    DisposableEffect(issue?.issueId) {
+//        if (issue?.issueId == null) return@DisposableEffect onDispose {}
+////        val userVoteRef = FirebaseDatabase.getInstance().getReference("issuevote").child(issueId).child(currentUserId)
+//        val voteRef = FirebaseDatabase.getInstance().getReference("issue_votes").child(issue.issueId)
+//
+//        val listener = object : ValueEventListener {
+//            override fun onDataChange(snapshot: DataSnapshot) {
+//                var vCount = 0
+//                var iCount = 0
+//                var myVote: String? = null
+//
+//                // Loop through every user who voted on this issue
+//                for (child in snapshot.children) {
+//                    val voteType = child.getValue(String::class.java)
+//
+//                    if (voteType == "valid") vCount++
+//                    if (voteType == "invalid") iCount++
+//
+//                    // Check if this specific vote belongs to the current logged-in user
+//                    if (child.key == currentUserId) {
+//                        myVote = voteType
+//                    }
+//                }
+//
+//                // Update the UI instantly
+//                validCount = vCount
+//                invalidCount = iCount
+//                myCurrentVote = myVote
+//                serverVote = myVote
+//            }
+//
+//            override fun onCancelled(error: DatabaseError) {}
+//        }
+//
+//        voteRef.addValueEventListener(listener)
+//
+//        // Automatically remove the listener when the user presses the Back button
+//        onDispose {
+//            voteRef.removeEventListener(listener)
+//        }
+//    }
+
     DisposableEffect(issue?.issueId) {
-        if (issue?.issueId == null) return@DisposableEffect onDispose {}
+        val currentIssueId = issue?.issueId ?: return@DisposableEffect onDispose {}
+        val userId = currentUserId ?: return@DisposableEffect onDispose {}
 
-        val voteRef = FirebaseDatabase.getInstance().getReference("issue_votes").child(issue.issueId)
+        // Point directly to this single user's vote
+        val myVoteRef = FirebaseDatabase.getInstance()
+            .getReference("issue_votes")
+            .child(currentIssueId)
+            .child(userId)
 
-        val listener = object : ValueEventListener {
+        val myVoteListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                var vCount = 0
-                var iCount = 0
-                var myVote: String? = null
-
-                // Loop through every user who voted on this issue
-                for (child in snapshot.children) {
-                    val voteType = child.getValue(String::class.java)
-
-                    if (voteType == "valid") vCount++
-                    if (voteType == "invalid") iCount++
-
-                    // Check if this specific vote belongs to the current logged-in user
-                    if (child.key == currentUserId) {
-                        myVote = voteType
-                    }
+                if (snapshot.exists()) {
+                    val voteType = snapshot.getValue(String::class.java)
+                    myCurrentVote = voteType
+                    serverVote = voteType
+                } else {
+                    myCurrentVote = null
+                    serverVote = null
                 }
-
-                // Update the UI instantly
-                validCount = vCount
-                invalidCount = iCount
-                myCurrentVote = myVote
             }
-
             override fun onCancelled(error: DatabaseError) {}
         }
 
-        voteRef.addValueEventListener(listener)
+        myVoteRef.addValueEventListener(myVoteListener)
 
-        // Automatically remove the listener when the user presses the Back button
         onDispose {
-            voteRef.removeEventListener(listener)
+            myVoteRef.removeEventListener(myVoteListener)
         }
     }
 
@@ -382,15 +426,17 @@ fun IssueDetailScreen(
                     }
                 }
         }
+            val currentValid = issue?.votevalid ?: 0
+            val currentInvalid = issue?.voteinvalid ?: 0
+            // Calculate the math
+            val totalVotes = currentValid + currentInvalid
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Calculate the math
-            val totalVotes = validCount + invalidCount
 
             // Prevent dividing by zero if nobody has voted yet!
             val accuracyRatio = if (totalVotes > 0) {
-                validCount.toFloat() / totalVotes.toFloat()
+                currentValid.toFloat() / totalVotes.toFloat()
             } else {
                 0.0f // Default to 50% if no votes exist
             }
@@ -497,26 +543,58 @@ fun IssueDetailScreen(
                         VoteButton(
                             modifier = Modifier.weight(1f),
                             text = "Valid Issue",
-                            count = validCount,
+                            count = currentValid,
                             icon = Icons.Default.CheckCircle,
                             isSelected = myCurrentVote == "valid",
                             activeColor = Color(0xFF1A9058),       // Dark Green text/border
                             activeContainerColor = Color(0xFFD1E7DD), // Light Green background
                             onClick = {
+//                                myCurrentVote = if (myCurrentVote == "valid") null else "valid"
+//                                castVote(issue?.issueId ?: "none", myCurrentVote)
+
+                                // 1. Instantly flip the UI state
                                 myCurrentVote = if (myCurrentVote == "valid") null else "valid"
-                                castVote(issue?.issueId ?: "none", myCurrentVote)
+
+                                // 2. Cancel any running timer
+                                debounceJob?.cancel()
+
+                                // 3. Start a new 500ms countdown before writing to Firebase
+                                debounceJob = coroutineScope.launch {
+                                    delay(500)
+                                    castVote(issue?.issueId ?: "none", oldVote = serverVote, newVote = myCurrentVote ,
+                                        issue?.votevalid ?: 0, issue?.voteinvalid ?: 0
+                                    )
+                                }
                             })
                         VoteButton(
                             modifier = Modifier.weight(1f),
                             text = "Invalid Issue",
-                            count = invalidCount,
+                            count = currentInvalid,
                             icon = Icons.Default.Cancel,
                             isSelected = myCurrentVote == "invalid",
                             activeColor = Color(0xB2EE3E3E),         // Dark Red text/border
                             activeContainerColor = Color(0xFFF8D7DA),   // Light Red background
                             onClick = {
+//                                myCurrentVote = if (myCurrentVote == "invalid") null else "invalid"
+//                                castVote(issue?.issueId ?: "none", myCurrentVote)
+
+                                // 1. Instantly flip the UI state
                                 myCurrentVote = if (myCurrentVote == "invalid") null else "invalid"
-                                castVote(issue?.issueId ?: "none", myCurrentVote)
+
+                                // 2. Cancel any running timer
+                                debounceJob?.cancel()
+
+                                // 3. Start a new 500ms countdown before writing to Firebase
+                                debounceJob = coroutineScope.launch {
+                                    delay(500)
+                                    castVote(
+                                        issue?.issueId ?: "none",
+                                        oldVote = serverVote,
+                                        newVote = myCurrentVote,
+                                        issue?.votevalid ?: 0,
+                                        issue?.voteinvalid ?: 0
+                                    )
+                                }
                             }
                         )
                     }
@@ -629,7 +707,7 @@ fun TagChip(text: String, backgroundColor: Color, textColor: Color) {
 fun VoteButton(
     modifier: Modifier = Modifier,
     text: String,
-    count: Int,
+    count: Long,
     icon: ImageVector,
     isSelected: Boolean,
     activeColor: Color,
@@ -668,18 +746,47 @@ fun VoteButton(
         }
     }
 }
-fun castVote(issueId: String, newVote: String?) {
+fun castVote(
+    issueId: String,
+    oldVote: String?,
+    newVote: String?,
+    votevalid: Long,
+    voteinvalid: Long
+) {
     val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
-    val userVoteRef = FirebaseDatabase.getInstance().getReference("issue_votes")
-        .child(issueId).child(userId)
+    val database = FirebaseDatabase.getInstance()
 
+    // If they didn't actually change anything, don't waste a database call!
+    if (oldVote == newVote) return
+
+    // We use a Map to update multiple different locations in the database at the exact same time
+    val updates = hashMapOf<String, Any?>()
+
+    // --- 1. Update the User's Vote Record ---
     if (newVote == null) {
-        // If they toggle it off, remove them from the folder
-        userVoteRef.removeValue()
+        updates["/issue_votes/$issueId/$userId"] = null // Remove them
     } else {
-        // Otherwise, save "valid" or "invalid" under their User ID
-        userVoteRef.setValue(newVote)
+        updates["/issue_votes/$issueId/$userId"] = newVote // Save "valid" or "invalid"
     }
+
+    // --- 2. Reverse the OLD Math ---
+    // If they had a previous vote, we need to subtract it from the total
+    if (oldVote == "valid" && votevalid > 0) {
+        updates["/issues/$issueId/votevalid"] = ServerValue.increment(-1)
+    } else if (oldVote == "invalid" && voteinvalid > 0) {
+        updates["/issues/$issueId/voteinvalid"] = ServerValue.increment(-1)
+    }
+
+    // --- 3. Apply the NEW Math ---
+    // Now we add their new vote to the correct total
+    if (newVote == "valid") {
+        updates["/issues/$issueId/votevalid"] = ServerValue.increment(1)
+    } else if (newVote == "invalid") {
+        updates["/issues/$issueId/voteinvalid"] = ServerValue.increment(1)
+    }
+
+    // --- 4. Execute everything atomically ---
+    database.reference.updateChildren(updates)
 }
 @Preview(widthDp = 500 , heightDp = 1500)
 @Composable

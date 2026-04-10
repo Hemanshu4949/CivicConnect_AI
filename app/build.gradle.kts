@@ -80,6 +80,7 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.firebase.inappmessaging.display)
     implementation(libs.firebase.ai)
+//    implementation(libs.androidx.navigation.compose.jvmstubs)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

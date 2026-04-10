@@ -5,7 +5,10 @@ import android.Manifest
 import android.R.attr.icon
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,6 +43,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.civicconnectai.SupabaseManager
@@ -51,6 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,10 +82,14 @@ fun ReportIssueScreen(
     var expandedCategory by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
 
-         // Image State: Can be a Uri (Gallery) OR a Bitmap (Camera)
-        var imageUri by remember { mutableStateOf<Uri?>(null) }
-        var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    // Image State: Can be a Uri (Gallery) OR a Bitmap (Camera)
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var imageBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
+    // State to hold our image URI and upload status
+    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
+    var uploadedImageUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
 
          // Dropdown options
         val categories = listOf("Pothole", "Streetlight", "Graffiti", "Trash", "Other")
@@ -606,20 +615,21 @@ fun ReportIssueScreen(
                                 val newIssueId = databaseRef.push().key ?: return@launch
 
                                 var finalImageUrl = ""
-                                if (imageUri != null) {
+                                if (imageUri != null || imageBitmap != null) {
                                     val uploadedUrl =
                                         uploadImageToSupabase(
-                                            context, imageUri!!, imageBitmap , newIssueId
+                                            context, imageUri, imageBitmap , newIssueId
                                         )
                                     if (uploadedUrl != null) {
                                         finalImageUrl = uploadedUrl
-                                    }
-                                    else{
-                                        Toast.makeText(
-                                            context,
-                                            "Issue not Reported",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                    } else {
+                                        // If the upload failed, stop the whole process so we don't
+                                        // save a broken issue to Firebase.
+                                        withContext(Dispatchers.Main) {
+                                            isSubmitting = false
+                                            Toast.makeText(context, "Image Upload Failed", Toast.LENGTH_SHORT).show()
+                                        }
+                                        return@launch
                                     }
                                 }
 
@@ -747,67 +757,152 @@ fun ReportIssueScreen(
             )
         }
     }
-
 suspend fun uploadImageToSupabase(
     context: Context,
     imageUri: Uri?,
     imageBitmap: Bitmap?,
-    issueId: String // e.g., the unique ID of the report
+    issueId: String
 ): String? {
-    return withContext(Dispatchers.IO) {
-        try {
-            // 1. Get the Firebase User UID
+    // 1. Put the Try/Catch on the OUTSIDE. This fixes the Return Type Error forever.
+    return try {
+        withContext(Dispatchers.IO) {
+
+            // 2. Check Auth
             val user = FirebaseAuth.getInstance().currentUser
             if (user == null) {
                 Log.e("SupabaseUpload", "User not logged in")
-                return@withContext null
+                return@withContext null // Exits the withContext and returns null
             }
             val uid = user.uid
 
-            // 2. Convert EITHER the Uri or the Bitmap into a ByteArray
-            val byteArray: ByteArray? = when {
-                imageUri != null -> {
-                    val inputStream = context.contentResolver.openInputStream(imageUri)
-                    val bytes = inputStream?.readBytes()
-                    inputStream?.close()
-                    bytes
+            // 3. Convert Image to Bitmap Safely
+            val rawBitmap: Bitmap? = if (imageBitmap != null) {
+                if (imageBitmap.config == Bitmap.Config.HARDWARE) {
+                    imageBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                } else {
+                    imageBitmap
                 }
-                imageBitmap != null -> {
-                    val stream = ByteArrayOutputStream()
-                    // Compress the camera bitmap to JPEG format (100% quality)
-                    imageBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                    stream.toByteArray()
+            } else if (imageUri != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, imageUri)
+                    android.graphics.ImageDecoder.decodeBitmap(source)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
                 }
-                else -> null
+            } else {
+                null
             }
 
-            if (byteArray == null) {
-                Log.e("SupabaseUpload", "Could not read image data")
+            // 4. Stop if no image was found
+            if (rawBitmap == null) {
+                Log.e("SupabaseUpload", "Raw bitmap is null. Did the camera return an image?")
                 return@withContext null
             }
 
-            // 3. Create a unique path: "UID/issueId_timestamp.jpg"
-            // This groups all images by the user who uploaded them
-            val fileName = "$uid/${issueId}.jpg"
+            // 5. Compress
+            val stream = java.io.ByteArrayOutputStream()
+            rawBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+            val byteArray = stream.toByteArray()
+            Log.d("SupabaseUpload", "Success! ByteArray created: ${byteArray.size} bytes")
 
-            // 4. Upload to the bucket
-                val bucket = SupabaseManager.client.storage.from("civicconnectai")
+            // 6. Upload
+            val fileName = "$uid/${issueId}.jpg"
+            val bucket = SupabaseManager.client.storage.from("civicconnectai")
+
             bucket.upload(path = fileName, data = byteArray) {
-                upsert = false
+                upsert = true
             }
 
-            // 5. Get the Public URL so you can save it to your Firebase Realtime Database
-            val publicUrl = bucket.publicUrl(fileName)
-            return@withContext publicUrl
-
-        } catch (e: Exception) {
-            Log.e("SupabaseUpload", "Upload failed: ${e.message}")
-            return@withContext null
+            // 7. Return the final URL! (Notice there is no 'return@withContext' needed here)
+            bucket.publicUrl(fileName)
         }
+    } catch (e: Exception) {
+        // If literally ANYTHING fails above, it drops down here safely.
+        Log.e("SupabaseUpload", "Upload completely failed: ${e.message}")
+        null // Returns null to the main screen
+    }
+}
+//suspend fun uploadImageToSupabase(
+//    context: Context,
+//    imageUri: Uri?,
+//    imageBitmap: Bitmap?,
+//    issueId: String
+//): String? {
+//    return withContext(Dispatchers.IO) {
+//        try {
+//            // 1. Get the Firebase User UID
+//            val user = FirebaseAuth.getInstance().currentUser
+//            if (user == null) {
+//                Log.e("SupabaseUpload", "User not logged in")
+//                return@withContext null
+//            }
+//            val uid = user.uid
+//
+//            // 2. Convert EITHER the Uri or the Bitmap into a ByteArray
+//            val rawBitmap: Bitmap? = when {
+//                imageBitmap != null -> {
+//                    if (imageBitmap.config == Bitmap.Config.HARDWARE) {
+//                        imageBitmap.copy(Bitmap.Config.ARGB_8888, false)
+//                    } else {
+//                        imageBitmap
+//                    }
+//                }
+//                imageUri != null -> {
+//                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+//                        val source = ImageDecoder.createSource(context.contentResolver, imageUri)
+//                        ImageDecoder.decodeBitmap(source)
+//                    } else {
+//                        @Suppress("DEPRECATION")
+//                        MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
+//                    }
+//                }
+//                else -> null
+//            }
+//
+//            if (rawBitmap == null) {
+//                Log.e("SupabaseUpload", "Could not read image data")
+//                return@withContext null
+//            }
+//
+//            val stream = ByteArrayOutputStream()
+//            rawBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+//            val byteArray = stream.toByteArray()
+//
+//            Log.d("SupabaseUpload", "Uploading ByteArray of size: ${byteArray.size} bytes")
+//
+//            // 3. Create a unique path
+//            val fileName = "$uid/${issueId}.jpg"
+//
+//            // 4. Upload to the bucket
+//            val bucket = SupabaseManager.client.storage.from("civicconnectai")
+//            bucket.upload(path = fileName, data = byteArray) {
+//                upsert = true
+//            }
+//
+//            // 5. Get the Public URL and return it!
+//            val publicUrl = bucket.publicUrl(fileName)
+//            return@withContext publicUrl
+//
+//        } catch (e: Exception) {
+//            // If the upload fails (e.g., no internet), catch it so the app doesn't crash!
+//            Log.e("SupabaseUpload", "Upload failed: ${e.message}")
+//            return@withContext null
+//        }
+//    }
+//}
+fun createTempImageUri(context: Context): Uri {
+    val tempFile = File(context.cacheDir, "temp_camera_image.jpg").apply {
+        createNewFile()
     }
 
+    // IMPORTANT: The authority string must match your AndroidManifest exactly!
+    return FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.provider",
+        tempFile
+    )
 }
-
 
 
 // --- Preview for Editing ---

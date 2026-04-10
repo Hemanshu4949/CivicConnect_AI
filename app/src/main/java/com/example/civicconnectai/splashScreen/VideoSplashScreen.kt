@@ -165,7 +165,7 @@ suspend fun checkUserDestination(auth: FirebaseAuth, database: FirebaseDatabase)
                     if (snapshot.exists() && snapshot.value.toString().isNotEmpty()) {
                         continuation.resume("home")
                     } else {
-                        continuation.resume("signup_google")
+                        continuation.resume("login")
                     }
                 }
                 .addOnFailureListener {

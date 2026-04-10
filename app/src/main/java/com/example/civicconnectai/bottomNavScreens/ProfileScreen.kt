@@ -1,53 +1,84 @@
 package com.example.civicconnectai.bottomNavScreens
 
+import CivicIssue
+import IssueViewModel
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.civicconnectai.R
-import com.example.civicconnectai.ui.theme.CivicConnectTheme
+import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.google.firebase.auth.FirebaseAuth
 
-// Data model for list items
-data class RecentReport(
-    val id: String,
-    val title: String,
-    val date: String,
-    val upvotes: Int,
-    val status: String,
-    val imageRes: Int
-)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen() {
-    // Sample Data
-    val recentReports = listOf(
-        RecentReport("1", "Pothole on Main St", "Oct 12", 12, "Resolved", R.drawable.pothole),
-        RecentReport("2", "Broken Streetlight", "Nov 03", 5, "Pending", R.drawable.accedent),
-        RecentReport("3", "Graffiti in Central Park", "Nov 05", 8, "In Review", R.drawable.garbage)
-    )
+fun ProfileScreen(navController: NavHostController , viewModel : IssueViewModel , onIssueClick: (String) -> Unit , onLogoutSuccess: () -> Unit) {
+
+    // --- BOTTOM SHEET STATE ---
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    // 1. Get the current logged-in user ID
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+
+    // 2. Collect the global issue list from your ViewModel
+    val globalIssuesList by viewModel.issuelist.collectAsState()
+
+    // 3. Do all the math in a 'remember' block so it only recalculates when the list changes
+    val profileStats = remember(globalIssuesList, currentUserId) {
+
+        // A. Get ONLY this user's issues
+        val myIssues = globalIssuesList.filter { it.userId == currentUserId }
+
+        // B. Calculate Total Reports
+        val reportsCount = myIssues.size
+
+        // C. Calculate Total Upvotes
+        // (Make sure "upvotes" perfectly matches the integer field in your CivicIssue data class.
+        // If it's a list of users who voted, use .size instead)
+        val totalUpvotes = myIssues.sumOf { it.votevalid }
+
+        // D. Get the Latest 3 Reports
+        // If your list is oldest-to-newest, .reversed() puts the newest first.
+        val recentThree = myIssues.reversed().take(3)
+
+        // Return a quick wrapper object with our results
+        ProfileData(reportsCount, totalUpvotes, recentThree)
+    }
+
 
     // --- MAIN LAYOUT: COLUMN ---
     Column(
@@ -83,7 +114,7 @@ fun ProfileScreen() {
         ) {
             // A. Profile Header Card
             item {
-                ProfileHeaderCard()
+                ProfileHeaderCard(profileStats , onSettingsClick = { showSettingsSheet = true })
             }
 
             // B. Section Title
@@ -99,23 +130,93 @@ fun ProfileScreen() {
                         text = "My Recent Reports",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
-                    TextButton(onClick = { /* View All Logic */ }) {
-                        Text(
-                            text = "View All",
-                            color = Color(0xFF5B75E6),
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                       TextButton(onClick = { // DIRECT LOGIC: Navigate to the home tab
+                            navController.navigate("home?filter=my_reports") {
+                                // Ensures we don't build up a massive backstack
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }) {
+                            Text(
+                                text = "View All",
+                                color = Color(0xFF5B75E6),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                }
+                if (profileStats.recentIssues.isEmpty()) {
+                    Text(
+                        text = "You haven't reported any issues yet.",
+                        modifier = Modifier.padding(16.dp),
+                        color = Color.Gray
+                    )
+                } else {
+                    profileStats.recentIssues.forEach { issue ->
+                        RecentReportItem(issue , onIssueClick)
                     }
                 }
             }
 
-            // C. List of Reports
-            items(recentReports) { report ->
-                RecentReportItem(report)
-            }
+
 
             // Bottom Spacer
             item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+    // --- 2. THE BOTTOM SHEET ---
+    if (showSettingsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettingsSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp, top = 16.dp)
+            ) {
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.padding(start = 24.dp, bottom = 16.dp)
+                )
+
+                HorizontalDivider(color = Color(0xFFF0F0F0))
+
+                // The Logout Action Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            // 1. Log the user out of Firebase
+                            FirebaseAuth.getInstance().signOut()
+
+                            // 2. Close the sheet
+                            showSettingsSheet = false
+
+                            // 3. Trigger the navigation back to your Login Screen
+                            onLogoutSuccess()
+                        }
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        // Use AutoMirrored so it flips correctly for right-to-left languages!
+                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                        contentDescription = "Logout",
+                        tint = Color(0xFFD32F2F) // A nice red color for a destructive action
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Log Out",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                        color = Color(0xFFD32F2F)
+                    )
+                }
+            }
         }
     }
 }
@@ -123,7 +224,17 @@ fun ProfileScreen() {
 // --- HELPER COMPOSABLES (Same as before) ---
 
 @Composable
-fun ProfileHeaderCard() {
+fun ProfileHeaderCard(profileStats : ProfileData ,onSettingsClick: () -> Unit ) {
+    val user = FirebaseAuth.getInstance().currentUser
+
+// Grab the raw Google Profile URL
+    val rawPhotoUrl = user?.photoUrl?.toString()
+
+// 🌟 PRO-TIP: Google returns a tiny, blurry 96x96 pixel image by default.
+// We can trick Google into giving us a crisp, high-res image by changing the end of the URL!
+    val highResProfileUrl = rawPhotoUrl?.replace("s96-c", "s400-c")
+
+
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -138,16 +249,23 @@ fun ProfileHeaderCard() {
         ) {
             // Avatar + Badge
             Box(contentAlignment = Alignment.BottomEnd) {
+                val personIconPainter = rememberVectorPainter(image = Icons.Default.Person)
                 // Placeholder Avatar
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_background), // Replace with real image
-                    contentDescription = "Profile Picture",
-                    contentScale = ContentScale.Crop,
+                AsyncImage(
+                    // 1. Give it the high-res Google URL
+                    model = highResProfileUrl, // Add a generic avatar PNG to your drawable folder just in case!
+                    fallback = personIconPainter,
+                    error = personIconPainter,
+                    placeholder = personIconPainter,
+                    contentDescription = "User Profile Picture",
+
+                    // 2. Make it look like a professional avatar
                     modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFCC80))
-                        .border(4.dp, Color(0xFFF0F0F0), CircleShape)
+                        .size(100.dp) // Size of the profile picture
+                        .clip(CircleShape) // Makes it perfectly round
+                        .border(3.dp, Color(0xFF5B75E6), CircleShape), // Your app's Royal Blue border
+
+                    contentScale = ContentScale.Crop // Ensures the image fills the circle without stretching
                 )
                 // Verification Badge
                 Icon(
@@ -164,10 +282,12 @@ fun ProfileHeaderCard() {
             Spacer(modifier = Modifier.height(16.dp))
 
             // Name
-            Text(
-                text = "Alex Johnson",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
-            )
+            user?.displayName?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                )
+            }
 
             // Role Badge
             Row(
@@ -199,9 +319,9 @@ fun ProfileHeaderCard() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ProfileStat(count = "14", label = "Issues\nReported")
+                ProfileStat(count = profileStats.totalReports.toString(), label = "Issues\nReported")
                 VerticalDivider()
-                ProfileStat(count = "82", label = "Upvotes\nReceived")
+                ProfileStat(count = profileStats.totalUpvotes.toString(), label = "Upvotes\nReceived")
                 VerticalDivider()
                 ProfileStat(count = "90%", label = "Impact Score", color = Color(0xFF7B61FF))
             }
@@ -230,7 +350,7 @@ fun ProfileHeaderCard() {
                     color = Color(0xFFF5F5F5),
                     modifier = Modifier
                         .size(48.dp)
-                        .clickable { /* Settings Action */ }
+                        .clickable { onSettingsClick() }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Black)
@@ -274,7 +394,7 @@ fun ProfileStat(count: String, label: String, color: Color = Color(0xFF7B61FF)) 
 }
 
 @Composable
-fun RecentReportItem(report: RecentReport) {
+fun RecentReportItem(issue:CivicIssue  , onIssueClick: (String) -> Unit) {
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -287,15 +407,39 @@ fun RecentReportItem(report: RecentReport) {
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(id = report.imageRes),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.LightGray)
-            )
+            if (issue.imageUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(issue.imageUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Issue Image",
+                    contentScale = ContentScale.FillBounds, // Crops it perfectly to fit the box
+                    modifier = Modifier
+                        .size(94.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.LightGray)
+                )
+            } else {
+                // Placeholder if no image was uploaded
+                Box(
+                    modifier = Modifier
+                        .size(94.dp)
+                        .background(Color.LightGray)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Photo,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.LightGray)
+                    )
+                }
+            }
+
 
             Spacer(modifier = Modifier.width(16.dp))
 
@@ -306,17 +450,17 @@ fun RecentReportItem(report: RecentReport) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = report.title,
+                        text = issue.title,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1
                     )
-                    StatusChipProfile(report.status)
+                    StatusChipProfile(issue.status)
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Reported on ${report.date} • ${report.upvotes} Upvotes",
+                    text = "Reported on ${getTimeAgo(issue.timestamp)} • ${issue.votevalid} Upvotes",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.Gray
                 )
@@ -324,13 +468,16 @@ fun RecentReportItem(report: RecentReport) {
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "View details",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color(0xFF7B61FF),
-                            fontWeight = FontWeight.Medium
+                    TextButton(onClick = {onIssueClick(issue.issueId) })
+                    {
+                        Text(
+                            text = "View details",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color(0xFF7B61FF),
+                                fontWeight = FontWeight.Medium
+                            )
                         )
-                    )
+                    }
                     Spacer(modifier = Modifier.width(2.dp))
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -368,11 +515,8 @@ fun StatusChipProfile(status: String) {
         )
     }
 }
-
-@Preview
-@Composable
-fun ProfileScreenPreview() {
-    CivicConnectTheme {
-        ProfileScreen()
-    }
-}
+data class ProfileData(
+    val totalReports: Int,
+    val totalUpvotes: Long,
+    val recentIssues: List<CivicIssue> // Use your actual data class name here
+)

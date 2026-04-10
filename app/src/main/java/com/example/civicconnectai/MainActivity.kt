@@ -35,6 +35,7 @@ import com.example.civicconnectai.authentication.SignUpScreen
 import com.example.civicconnectai.bottomNavScreens.IssueDetailScreen
 import com.example.civicconnectai.bottomNavScreens.MapScreen
 import com.example.civicconnectai.addissue.ReportIssueScreen
+import com.example.civicconnectai.bottomNavScreens.ProfileScreen
 import com.example.civicconnectai.splashScreen.VideoSplashScreen
 import com.example.civicconnectai.ui.theme.CivicConnectTheme
 import com.google.firebase.auth.FirebaseAuth
@@ -114,11 +115,13 @@ class MainActivity : ComponentActivity() {
                             override fun onDataChange(snapshot: DataSnapshot) {
                                 val tempIssues = mutableListOf<CivicIssue>()
                                 for (childSnapshot in snapshot.children) {
-                                    childSnapshot.getValue(CivicIssue::class.java)?.let { tempIssues.add(it) }
+                                    childSnapshot.getValue(CivicIssue::class.java)
+                                        ?.let { tempIssues.add(it) }
                                 }
                                 masterIssuesList = tempIssues.sortedByDescending { it.timestamp }
                                 isLoading = false
                             }
+
                             override fun onCancelled(error: DatabaseError) {
                                 isLoading = false
                             }
@@ -132,7 +135,7 @@ class MainActivity : ComponentActivity() {
 //                    LaunchedEffect(Unit) {
 //                        val user = auth.currentUser
 //                        if (user != null) {
-                            // User is logged in, but do they have a phone number?
+                    // User is logged in, but do they have a phone number?
 //                            FirebaseDatabase.getInstance().getReference("users")
 //                                .child(user.uid).child("contactNumber").get()
 //                                .addOnSuccessListener { snapshot ->
@@ -163,164 +166,208 @@ class MainActivity : ComponentActivity() {
 //                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
 //                        }
 //                    } else {
-                        NavHost(
-                            navController = navController, startDestination = "splash",
+                    NavHost(
+                        navController = navController, startDestination = "splash",
 
-                            enterTransition = {
-                                slideIntoContainer(
-                                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                                    animationSpec = tween(400)
-                                )
-                            },
-                            // Global Exit Transition (Slide out to Left)
-                            exitTransition = {
-                                slideOutOfContainer(
-                                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                                    animationSpec = tween(400)
-                                )
-                            },
-                            // Global Back Enter (Slide in from Left)
-                            popEnterTransition = {
-                                slideIntoContainer(
-                                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                                    animationSpec = tween(400)
-                                )
-                            },
-                            // Global Back Exit (Slide out to Right)
+                        enterTransition = {
+                            slideIntoContainer(
+                                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(400)
+                            )
+                        },
+                        // Global Exit Transition (Slide out to Left)
+                        exitTransition = {
+                            slideOutOfContainer(
+                                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(400)
+                            )
+                        },
+                        // Global Back Enter (Slide in from Left)
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(400)
+                            )
+                        },
+                        // Global Back Exit (Slide out to Right)
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(400)
+                            )
+                        }
+                    )
+                    {
+
+                        //  Your Video & Logic
+                        composable(
+                            "splash",
+                            // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
                             popExitTransition = {
-                                slideOutOfContainer(
-                                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                                    animationSpec = tween(400)
+                                slideOutVertically(
+                                    targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
+                                    animationSpec = tween(500)
                                 )
-                            }
-                        )
+                            }) {
+                            VideoSplashScreen(
+                                navController,
+                                auth,
+                                FirebaseDatabase.getInstance()
+                            )
+                        }
+
+                        // SCREEN 1: Login
+                        composable("login") {
+                            LoginScreen(
+                                onLoginClick = {
+                                    // Navigate to Home (we will build Home later)
+                                    navController.navigate("home")
+                                    {
+//                                        popUpTo(navController.graph.startDestinationId)
+                                        popUpTo(0)
+
+                                        {
+                                            inclusive = true
+                                        }
+                                    }
+                                },
+                                onSignUpClick = {
+                                    // Navigate to Sign Up Screen
+                                    navController.navigate("signup")
+                                    {
+//                                        popUpTo(navController.graph.startDestinationId)
+                                        popUpTo(0)
+
+                                        {
+                                            inclusive = true
+                                        }
+                                    }
+                                },
+                                onGoogleSignInClick = {
+                                    navController.navigate("home")
+                                    {
+//                                        popUpTo(navController.graph.startDestinationId)
+                                        popUpTo(0)
+                                        {
+                                            inclusive = true
+                                        }
+                                    }
+                                },
+                                onForgotPasswordClick = { /* Handle Forgot Password */ },
+                            )
+                        }
+
+                        // SCREEN 2: Sign Up
+                        composable(route = "signup")
                         {
 
-                           //  Your Video & Logic
-                            composable("splash" ,
-                                // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
-                                popExitTransition = {
-                                    slideOutVertically(
-                                        targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
-                                        animationSpec = tween(500)
-                                    )
-                                }) {
-                                VideoSplashScreen(navController, auth, FirebaseDatabase.getInstance())
-                            }
 
-                            // SCREEN 1: Login
-                            composable("login") {
-                                LoginScreen(
-                                    onLoginClick = {
-                                        // Navigate to Home (we will build Home later)
-                                        navController.navigate("home")
-                                        {
-                                            popUpTo(navController.graph.startDestinationId)
+                            SignUpScreen(
+                                onRegisterClick = { option ->
+
+                                    Log.e("Routes", option.toString())
+                                    when (option) {
+                                        "SignInWithGoogle" -> {
+                                            navController.navigate("home")
                                             {
-                                                inclusive = true
-                                            }
-                                        }
-                                    },
-                                    onSignUpClick = {
-                                        // Navigate to Sign Up Screen
-                                        navController.navigate("signup")
-                                        {
-                                            popUpTo(navController.graph.startDestinationId)
-                                            {
-                                                inclusive = true
-                                            }
-                                        }
-                                    },
-                                    onGoogleSignInClick = {
-                                        navController.navigate("home")
-                                        {
-                                            popUpTo(navController.graph.startDestinationId)
-                                            {
-                                                inclusive = true
-                                            }
-                                        }
-                                    },
-                                    onForgotPasswordClick = { /* Handle Forgot Password */ },
-                                )
-                            }
-
-                            // SCREEN 2: Sign Up
-                            composable(route = "signup")
-                            {
-
-
-                                SignUpScreen(
-                                    onRegisterClick = { option ->
-
-                                        Log.e("Routes", option.toString())
-                                        when (option) {
-                                            "SignInWithGoogle" -> {
-                                                navController.navigate("home")
+                                                popUpTo(navController.graph.startDestinationId)
                                                 {
-                                                    popUpTo(navController.graph.startDestinationId)
-                                                    {
-                                                        inclusive = true
-                                                    }
-                                                }
-
-                                            }
-
-                                            "registration" -> {
-                                                navController.navigate("login") {
-                                                    popUpTo(navController.graph.startDestinationId) {
-                                                        inclusive = true
-                                                    }
+                                                    inclusive = true
                                                 }
                                             }
 
-                                            else -> {
-                                                navController.popBackStack()
+                                        }
+
+                                        "registration" -> {
+                                            navController.navigate("login") {
+                                                popUpTo(navController.graph.startDestinationId) {
+                                                    inclusive = true
+                                                }
                                             }
                                         }
-                                    },
 
-                                    onLoginClick = {
-                                        // Go back to Login
-                                        navController.popBackStack()
+                                        else -> {
+                                            navController.popBackStack()
+                                        }
                                     }
-
-                                )
-                            }
-
-                            // 3. Home Screen
-                            composable(
-                                "home",
-
-                                enterTransition = {
-                                    slideInVertically(
-                                        initialOffsetY = { fullHeight -> fullHeight }, // Starts below the screen
-                                        animationSpec = tween(500)
-                                    )
                                 },
 
-                                // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
-                                popExitTransition = {
-                                    slideOutVertically(
-                                        targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
-                                        animationSpec = tween(500)
-                                    )
+                                onLoginClick = {
+                                    // Go back to Login
+                                    navController.popBackStack()
                                 }
 
-                            ) {
-                                MainScreen(
-                                    // --- THIS MAKES THE FAB WORK ---
-                                    reportIssueScreen = {
-                                        // Navigate to Report Issue
-                                        navController.navigate("report_issue")
-                                    },
-                                    // --- THIS MAKES THE LIST ITEMS WORK ---
-                                    onIssueClick = { issueId ->
-                                        // Navigate to Report Issue (Editable = False)
-                                        // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
-                                        navController.navigate("issue_detail/$issueId")
-                                    }
+                            )
+                        }
+
+                        // 3. Home Screen
+                        composable(
+                            "home",
+
+                            enterTransition = {
+                                slideInVertically(
+                                    initialOffsetY = { fullHeight -> fullHeight }, // Starts below the screen
+                                    animationSpec = tween(500)
+                                )
+                            },
+
+                            // 2. EXIT (Back): Slide DOWN to the bottom (Vertical Slide Out)
+                            popExitTransition = {
+                                slideOutVertically(
+                                    targetOffsetY = { fullHeight -> fullHeight }, // Exits to the bottom
+                                    animationSpec = tween(500)
                                 )
                             }
+
+                        ) {
+                            MainScreen(
+                                // --- THIS MAKES THE FAB WORK ---
+                                navController = navController,
+                                reportIssueScreen = {
+                                    // Navigate to Report Issue
+                                    navController.navigate("report_issue")
+                                },
+                                defaultfilter = "null" ,
+                                // --- THIS MAKES THE LIST ITEMS WORK ---
+                                onIssueClick = { issueId ->
+                                    // Navigate to Report Issue (Editable = False)
+                                    // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
+                                    navController.navigate("issue_detail/$issueId")
+                                } , 
+                                onLogoutSuccess = {
+                                    navController.navigate("login")
+                                    {
+                                        popUpTo(0)
+                                        {
+                                            inclusive = true
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                            // profile to home filter
+                            composable(
+                                route = "home?filter={filter}", // The '?' makes it an optional parameter
+                                arguments = listOf(navArgument("filter") { defaultValue = "all" })
+                            ) { backStackEntry ->
+                                val filterType = backStackEntry.arguments?.getString("filter") ?: "all"
+
+                                MainScreen(
+                                    navController = navController,
+                                    defaultfilter = filterType, // Pass this to your MainScreen
+                                    reportIssueScreen = { navController.navigate("report_issue") },
+                                    onIssueClick = { id -> navController.navigate("issue_detail/$id") },
+                                    onLogoutSuccess = {navController.navigate("login")
+                                    {
+                                        popUpTo(0)
+                                        {
+                                            inclusive = true
+                                        }
+                                    }},
+                                )
+                            }
+
+
                             composable("map") {
 
                                 MapScreen(
@@ -383,6 +430,27 @@ class MainActivity : ComponentActivity() {
                                     onBackClick = { navController.popBackStack() }
                                 )
                             }
+
+                            composable("profile") {
+                                ProfileScreen(
+                                    navController = navController,
+                                    viewModel = sharedViewModel,
+                                    onIssueClick = { issueId ->
+                                        // Navigate to Report Issue (Editable = False)
+                                        // In a real app, you would pass the ID too, e.g., "report_issue/false/$issueId"
+                                        navController.navigate("issue_detail/$issueId")
+                                    },
+                                 onLogoutSuccess = { navController.navigate("login")
+                                 {
+                                     popUpTo(0)
+                                     {
+                                         inclusive = true
+                                     }
+                                 }}
+                                )
+                            }
+
+
                         }
                 }
             }
