@@ -1,10 +1,15 @@
 <div align="center">
 
-<img src="cc_splash.png" width="160"/>
-
-<br/>
-
-# CivicConnect AI
+<table border="0" cellspacing="0" cellpadding="0">
+  <tr>
+    <td valign="middle" >
+      <img src="ic_launcher-playstore.png" width="72" height="72" style="border-radius:16px;"/>
+    </td>
+    <td valign="middle" style="padding-left:14px;">
+      <h1> Civic Connect </h1>
+    </td>
+  </tr>
+</table>
 
 ### Bridging citizens and local authorities — one report at a time
 
